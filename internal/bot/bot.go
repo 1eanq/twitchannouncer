@@ -6,11 +6,18 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"twitchannouncer/internal/database"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"twitchannouncer/internal/config"
 )
+
+type StreamInfo struct {
+	Title       string
+	ViewerCount int
+	GameName    string
+}
 
 var userState = make(map[int64]string)
 var data database.Data
@@ -37,9 +44,6 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI) {
 				bot.Send(tgbotapi.NewMessage(chatID, "Напиши Twitch username:"))
 				userState[chatID] = "awaiting_username"
 				data.TelegramUsername = update.Message.From.UserName
-			case "send":
-				text := checkTwitchStream(data, cfg)
-				bot.Send(tgbotapi.NewMessage(data.ChanelID, text))
 			default:
 				bot.Send(tgbotapi.NewMessage(chatID, "Неизвестная команда"))
 			}
@@ -62,20 +66,50 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI) {
 			}
 			data.ChanelID = int64(chanel_id_int)
 			userState[chatID] = ""
-			bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %f", data.TwitchUsername, data.ChanelID)))
+			go monitorStreamLoop(data, cfg, bot)
+			bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChanelID)))
 		}
 	}
 }
 
-func checkTwitchStream(data database.Data, cfg config.Config) string {
-	url := fmt.Sprintf("https://api.twitch.tv/helix/streams?user_login=%s", data.TwitchUsername)
+func monitorStreamLoop(data database.Data, cfg config.Config, bot *tgbotapi.BotAPI) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	var wasLive bool = false
+	var latestMsgID int
+
+	for {
+		select {
+		case <-ticker.C:
+			live, streamInfo := checkStreamStatus(data.TwitchUsername, cfg)
+
+			// ТОЛЬКО если статус изменился
+			if live && !wasLive {
+				text := fmt.Sprintf("🔴 %s начал стрим!\nИгра: %s\nНазвание: %s\nhttps://www.twitch.tv/%s", data.TwitchUsername, streamInfo.GameName, streamInfo.Title, data.TwitchUsername)
+				msg, _ := bot.Send(tgbotapi.NewMessage(data.ChanelID, text))
+				latestMsgID = msg.MessageID
+			} else if !live && wasLive {
+				_, err := bot.Request(tgbotapi.NewDeleteMessage(data.ChanelID, latestMsgID))
+				if err != nil {
+					fmt.Println("Ошибка удаления!")
+				}
+			}
+
+			wasLive = live
+		}
+	}
+}
+
+func checkStreamStatus(username string, cfg config.Config) (bool, StreamInfo) {
+	url := fmt.Sprintf("https://api.twitch.tv/helix/streams?user_login=%s", username)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Client-ID", cfg.TwitchClientID)
 	req.Header.Set("Authorization", "Bearer "+cfg.TwitchOAuthToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "Ошибка подключения к Twitch"
+		return false, StreamInfo{}
 	}
 	defer resp.Body.Close()
 
@@ -89,13 +123,17 @@ func checkTwitchStream(data database.Data, cfg config.Config) string {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "Ошибка обработки данных Twitch"
+		return false, StreamInfo{}
 	}
 
 	if len(result.Data) == 0 {
-		return fmt.Sprintf("Стример %s офлайн.", data.TwitchUsername)
+		return false, StreamInfo{}
 	}
 
 	stream := result.Data[0]
-	return fmt.Sprintf("🎥 %s в эфире!\nИгра: %s\nНазвание: %s\nhttps://www.twitch.tv/%s\nhttps://www.twitch.tv/%s\nhttps://www.twitch.tv/%s\n", data.TwitchUsername, stream.GameName, stream.Title, data.TwitchUsername, data.TwitchUsername, data.TwitchUsername)
+	return true, StreamInfo{
+		Title:       stream.Title,
+		ViewerCount: stream.ViewerCount,
+		GameName:    stream.GameName,
+	}
 }

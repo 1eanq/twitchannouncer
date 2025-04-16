@@ -6,4 +6,5 @@ type Data struct {
 	ChanelID         int64
 	TwitchUsername   string
 	IsSent           bool
+	LatestMessageID  int
 }
