@@ -1,43 +1,28 @@
 package main
 
 import (
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
-	"time"
-
 	"twitchannouncer/internal/bot"
 	"twitchannouncer/internal/config"
 )
 
 func main() {
-	// Загружаем конфиг
 	cfg := config.LoadConfig("config.yaml")
-
-	// Обновляем токен сразу при старте, если нужно
 	err := config.RefreshTwitchToken(&cfg, "config.yaml")
 	if err != nil {
 		log.Fatalf("Ошибка обновления Twitch токена: %v", err)
 	}
 
-	// Запуск горутины для проверки токена каждые 5 минут
-	go refreshTokenPeriodically(&cfg)
+	go config.RefreshTokenPeriodically(&cfg)
 
-	// Запуск бота
-	telegram.StartBot(cfg)
-}
-
-// Функция, которая будет проверять и обновлять токен каждые 60 минут
-func refreshTokenPeriodically(cfg *config.Config) {
-	ticker := time.NewTicker(60 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Проверка и обновление токена
-			err := config.RefreshTwitchToken(cfg, "config.yaml")
-			if err != nil {
-				log.Printf("Не удалось обновить Twitch токен: %v", err)
-			}
-		}
+	bot_, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
+	if err != nil {
+		log.Panic(err)
 	}
+
+	bot_.Debug = true
+	log.Printf("Authorized on account %s", bot_.Self.UserName)
+
+	bot.StartBot(cfg, bot_)
 }
