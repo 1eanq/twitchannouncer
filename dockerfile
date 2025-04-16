@@ -16,7 +16,6 @@ WORKDIR /app
 RUN apk add --no-cache sqlite
 
 COPY --from=builder /app/bot .
-COPY --from=builder /app/config.yaml .     # если config.yaml нужен
-COPY --from=builder /app/bot.db .          # если хочешь копировать начальную БД (опционально)
+COPY --from=builder /app/config.yaml .
 
 CMD ["./bot"]
