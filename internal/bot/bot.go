@@ -22,7 +22,7 @@ type StreamInfo struct {
 var userState = make(map[int64]string)
 var data database.Data
 
-func StartBot(cfg config.Config, bot *tgbotapi.BotAPI) {
+func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
@@ -53,27 +53,41 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI) {
 		if userState[chatID] == "awaiting_username" {
 			data.TwitchUsername = strings.TrimSpace(update.Message.Text)
 			bot.Send(tgbotapi.NewMessage(chatID, "Отправьте ID канала"))
-			userState[chatID] = "awaiting_chanel"
+			userState[chatID] = "awaiting_channel"
 			continue
 		}
 
-		if userState[chatID] == "awaiting_chanel" {
-			chanel_id := "-100" + update.Message.Text
-			chanel_id_int, err := strconv.Atoi(chanel_id)
+		if userState[chatID] == "awaiting_channel" {
+			channel_id := "-100" + update.Message.Text
+			channel_id_int, err := strconv.Atoi(channel_id)
 			if err != nil {
 				panic(err)
 				//TODO: handle error
 			}
-			data.ChanelID = int64(chanel_id_int)
+			data.ChannelID = int64(channel_id_int)
+
 			userState[chatID] = ""
 			go monitorStreamLoop(data, cfg, bot)
-			bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChanelID)))
+
+			err = db.StoreData(data)
+			if err != nil {
+				// Если ошибка связана с существованием записи
+				if strings.Contains(err.Error(), "уже существует") {
+					bot.Send(tgbotapi.NewMessage(chatID, "Такая запись уже существует!"))
+					continue
+				} else {
+					bot.Send(tgbotapi.NewMessage(chatID, "Произошла ошибка при добавлении данных."))
+					continue
+				}
+			}
+
+			bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChannelID)))
 		}
 	}
 }
 
 func monitorStreamLoop(data database.Data, cfg config.Config, bot *tgbotapi.BotAPI) {
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	var wasLive bool = false
@@ -84,13 +98,12 @@ func monitorStreamLoop(data database.Data, cfg config.Config, bot *tgbotapi.BotA
 		case <-ticker.C:
 			live, streamInfo := checkStreamStatus(data.TwitchUsername, cfg)
 
-			// ТОЛЬКО если статус изменился
 			if live && !wasLive {
 				text := fmt.Sprintf("🔴 %s начал стрим!\nИгра: %s\nНазвание: %s\nhttps://www.twitch.tv/%s", data.TwitchUsername, streamInfo.GameName, streamInfo.Title, data.TwitchUsername)
-				msg, _ := bot.Send(tgbotapi.NewMessage(data.ChanelID, text))
+				msg, _ := bot.Send(tgbotapi.NewMessage(data.ChannelID, text))
 				latestMsgID = msg.MessageID
 			} else if !live && wasLive {
-				_, err := bot.Request(tgbotapi.NewDeleteMessage(data.ChanelID, latestMsgID))
+				_, err := bot.Request(tgbotapi.NewDeleteMessage(data.ChannelID, latestMsgID))
 				if err != nil {
 					fmt.Println("Ошибка удаления!")
 				}

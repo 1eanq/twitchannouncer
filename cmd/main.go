@@ -5,6 +5,7 @@ import (
 	"log"
 	"twitchannouncer/internal/bot"
 	"twitchannouncer/internal/config"
+	"twitchannouncer/internal/database"
 )
 
 func main() {
@@ -16,6 +17,11 @@ func main() {
 
 	go config.RefreshTokenPeriodically(&cfg)
 
+	db, err := database.InitDatabase(cfg.DatabasePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	bot_, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
 		log.Panic(err)
@@ -24,5 +30,5 @@ func main() {
 	bot_.Debug = true
 	log.Printf("Authorized on account %s", bot_.Self.UserName)
 
-	bot.StartBot(cfg, bot_)
+	bot.StartBot(cfg, bot_, db)
 }

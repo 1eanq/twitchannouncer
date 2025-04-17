@@ -7,6 +7,7 @@ import (
 )
 
 type Config struct {
+	DatabasePath       string `yaml:"database_path"`
 	TelegramToken      string `yaml:"telegram_token"`
 	TwitchClientID     string `yaml:"twitch_client_id"`
 	TwitchClientSecret string `yaml:"twitch_client_secret"`
