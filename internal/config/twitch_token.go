@@ -3,10 +3,27 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
 )
+
+// Функция, которая будет проверять и обновлять токен каждые 60 минут
+func RefreshTokenPeriodically(cfg *Config) {
+	ticker := time.NewTicker(60 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			err := RefreshTwitchToken(cfg, "config.yaml")
+			if err != nil {
+				log.Printf("Не удалось обновить Twitch токен: %v", err)
+			}
+		}
+	}
+}
 
 func RefreshTwitchToken(cfg *Config, configFile string) error {
 	if time.Now().Unix() < cfg.TwitchOAuthExpires-60 {

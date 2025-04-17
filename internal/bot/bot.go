@@ -1,27 +1,28 @@
-package telegram
+package bot
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
+	"twitchannouncer/internal/database"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"twitchannouncer/internal/config"
 )
 
+type StreamInfo struct {
+	Title       string
+	ViewerCount int
+	GameName    string
+}
+
 var userState = make(map[int64]string)
+var data database.Data
 
-func StartBot(cfg config.Config) {
-	bot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	bot.Debug = true
-	log.Printf("Authorized on account %s", bot.Self.UserName)
-
+func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
@@ -42,6 +43,7 @@ func StartBot(cfg config.Config) {
 			case "new":
 				bot.Send(tgbotapi.NewMessage(chatID, "Напиши Twitch username:"))
 				userState[chatID] = "awaiting_username"
+				data.TelegramUsername = update.Message.From.UserName
 			default:
 				bot.Send(tgbotapi.NewMessage(chatID, "Неизвестная команда"))
 			}
@@ -49,18 +51,70 @@ func StartBot(cfg config.Config) {
 		}
 
 		if userState[chatID] == "awaiting_username" {
-			username := strings.TrimSpace(update.Message.Text)
-			userState[chatID] = ""
-			text := checkTwitchStream(username, cfg)
-			bot.Send(tgbotapi.NewMessage(chatID, text))
+			data.TwitchUsername = strings.TrimSpace(update.Message.Text)
+			bot.Send(tgbotapi.NewMessage(chatID, "Отправьте ID канала"))
+			userState[chatID] = "awaiting_channel"
 			continue
 		}
 
-		bot.Send(tgbotapi.NewMessage(chatID, "Напиши /new чтобы проверить Twitch стрим"))
+		if userState[chatID] == "awaiting_channel" {
+			channel_id := "-100" + update.Message.Text
+			channel_id_int, err := strconv.Atoi(channel_id)
+			if err != nil {
+				panic(err)
+				//TODO: handle error
+			}
+			data.ChannelID = int64(channel_id_int)
+
+			userState[chatID] = ""
+			go monitorStreamLoop(data, cfg, bot)
+
+			err = db.StoreData(data)
+			if err != nil {
+				// Если ошибка связана с существованием записи
+				if strings.Contains(err.Error(), "уже существует") {
+					bot.Send(tgbotapi.NewMessage(chatID, "Такая запись уже существует!"))
+					continue
+				} else {
+					bot.Send(tgbotapi.NewMessage(chatID, "Произошла ошибка при добавлении данных."))
+					continue
+				}
+			}
+
+			bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChannelID)))
+		}
 	}
 }
 
-func checkTwitchStream(username string, cfg config.Config) string {
+func monitorStreamLoop(data database.Data, cfg config.Config, bot *tgbotapi.BotAPI) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	var wasLive bool = false
+	var latestMsgID int
+
+	for {
+		select {
+		case <-ticker.C:
+			live, streamInfo := checkStreamStatus(data.TwitchUsername, cfg)
+
+			if live && !wasLive {
+				text := fmt.Sprintf("🔴 %s начал стрим!\nИгра: %s\nНазвание: %s\nhttps://www.twitch.tv/%s", data.TwitchUsername, streamInfo.GameName, streamInfo.Title, data.TwitchUsername)
+				msg, _ := bot.Send(tgbotapi.NewMessage(data.ChannelID, text))
+				latestMsgID = msg.MessageID
+			} else if !live && wasLive {
+				_, err := bot.Request(tgbotapi.NewDeleteMessage(data.ChannelID, latestMsgID))
+				if err != nil {
+					fmt.Println("Ошибка удаления!")
+				}
+			}
+
+			wasLive = live
+		}
+	}
+}
+
+func checkStreamStatus(username string, cfg config.Config) (bool, StreamInfo) {
 	url := fmt.Sprintf("https://api.twitch.tv/helix/streams?user_login=%s", username)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Client-ID", cfg.TwitchClientID)
@@ -68,7 +122,7 @@ func checkTwitchStream(username string, cfg config.Config) string {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "Ошибка подключения к Twitch"
+		return false, StreamInfo{}
 	}
 	defer resp.Body.Close()
 
@@ -82,13 +136,17 @@ func checkTwitchStream(username string, cfg config.Config) string {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "Ошибка обработки данных Twitch"
+		return false, StreamInfo{}
 	}
 
 	if len(result.Data) == 0 {
-		return fmt.Sprintf("Стример %s офлайн.", username)
+		return false, StreamInfo{}
 	}
 
 	stream := result.Data[0]
-	return fmt.Sprintf("🎥 %s в эфире!\nИгра: %s\nНазвание: %s\nhttps://www.twitch.tv/%s\nhttps://www.twitch.tv/%s\nhttps://www.twitch.tv/%s\n", username, stream.GameName, stream.Title, username, username, username)
+	return true, StreamInfo{
+		Title:       stream.Title,
+		ViewerCount: stream.ViewerCount,
+		GameName:    stream.GameName,
+	}
 }
