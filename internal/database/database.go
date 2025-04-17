@@ -57,3 +57,55 @@ func (db *DB) StoreData(data Data) error {
 
 	return nil
 }
+
+func (db *DB) GetUserSubscriptions(telegramUsername string) ([]Data, error) {
+	rows, err := db.Query(`
+		SELECT twitch_username, channel_id FROM users
+		WHERE telegram_username = ?
+	`, telegramUsername)
+	if err != nil {
+		return nil, fmt.Errorf("не удалось получить подписки: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []Data
+	for rows.Next() {
+		var d Data
+		if err := rows.Scan(&d.TwitchUsername, &d.ChannelID); err != nil {
+			return nil, err
+		}
+		subs = append(subs, d)
+	}
+	return subs, nil
+}
+
+func (db *DB) IfExists(data Data) (bool, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM users
+		WHERE telegram_username = ? AND twitch_username = ? AND channel_id = ?
+	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("ошибка при проверке существования: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+func (db *DB) DeleteData(data Data) error {
+	exists, err := db.IfExists(data)
+	if err != nil {
+		return fmt.Errorf("Ошибка при проверке данных.")
+	}
+	if !exists {
+		return fmt.Errorf("Такой подписки не существует или она не принадлежит вам.")
+	}
+
+	_, err = db.Exec(`
+		DELETE FROM users
+		WHERE telegram_username = ? AND twitch_username = ? AND channel_id = ?
+	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID)
+
+	return err
+}
