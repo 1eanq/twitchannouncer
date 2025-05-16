@@ -8,7 +8,6 @@ services:
     restart: always
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./data:/app/data
     logging:
       driver: "json-file"
       options:

@@ -1,70 +1,78 @@
 package database
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"log"
-	_ "modernc.org/sqlite"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type DB struct {
-	*sql.DB
+	Pool *pgxpool.Pool
 }
 
-func InitDatabase(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+func InitDatabase(connStr string) (*DB, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		return nil, fmt.Errorf("Error opening database: %v", err)
+		return nil, fmt.Errorf("ошибка подключения к PostgreSQL: %w", err)
 	}
-	_, err = db.Exec(`
+
+	// Создание таблицы
+	_, err = pool.Exec(ctx, `
 	CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    telegram_username TEXT NOT NULL,
-    channel_id INTEGER NOT NULL,
-    twitch_username TEXT NOT NULL,
-    UNIQUE(twitch_username, channel_id)
-)
-`)
+		id SERIAL PRIMARY KEY,
+		telegram_username TEXT NOT NULL,
+		channel_id BIGINT NOT NULL,
+		twitch_username TEXT NOT NULL,
+		UNIQUE(twitch_username, channel_id)
+	)`)
 
 	if err != nil {
 		return nil, fmt.Errorf("ошибка при создании таблицы: %w", err)
 	}
 
-	return &DB{db}, nil
+	log.Println("Подключение к PostgreSQL установлено")
+	return &DB{Pool: pool}, nil
 }
 
 func (db *DB) StoreData(data Data) error {
-	err := db.QueryRow(`
-		SELECT channel_id FROM users WHERE twitch_username = ? AND channel_id = ?
-	`, data.TwitchUsername, data.ChannelID).Scan(&data.ChannelID)
+	ctx := context.Background()
+
+	// Проверка существования
+	var exists int
+	err := db.Pool.QueryRow(ctx, `
+		SELECT 1 FROM users WHERE twitch_username = $1 AND channel_id = $2
+	`, data.TwitchUsername, data.ChannelID).Scan(&exists)
 
 	if err == nil {
-		return fmt.Errorf("Пользователь с таким twitch_username и channel_id уже существует")
-	} else if err != sql.ErrNoRows {
-		log.Printf("Ошибка при проверке данных: %v", err)
-		return fmt.Errorf("не удалось проверить существование записи: %w", err)
+		return fmt.Errorf("такая подписка уже существует")
 	}
 
-	_, err = db.Exec(`
+	// Вставка
+	_, err = db.Pool.Exec(ctx, `
 		INSERT INTO users (telegram_username, channel_id, twitch_username)
-		VALUES (?, ?, ?)
+		VALUES ($1, $2, $3)
 	`, data.TelegramUsername, data.ChannelID, data.TwitchUsername)
 
 	if err != nil {
-		log.Printf("Ошибка при добавлении данных в базу: %v", err)
-		return fmt.Errorf("не удалось добавить данные в базу: %w", err)
+		return fmt.Errorf("ошибка вставки данных: %w", err)
 	}
-
 	return nil
 }
 
 func (db *DB) GetUserSubscriptions(telegramUsername string) ([]Data, error) {
-	rows, err := db.Query(`
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `
 		SELECT twitch_username, channel_id FROM users
-		WHERE telegram_username = ?
+		WHERE telegram_username = $1
 	`, telegramUsername)
 	if err != nil {
-		return nil, fmt.Errorf("не удалось получить подписки: %w", err)
+		return nil, fmt.Errorf("ошибка выборки: %w", err)
 	}
 	defer rows.Close()
 
@@ -80,32 +88,90 @@ func (db *DB) GetUserSubscriptions(telegramUsername string) ([]Data, error) {
 }
 
 func (db *DB) IfExists(data Data) (bool, error) {
+	ctx := context.Background()
 	var count int
-	err := db.QueryRow(`
+	err := db.Pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM users
-		WHERE telegram_username = ? AND twitch_username = ? AND channel_id = ?
+		WHERE telegram_username = $1 AND twitch_username = $2 AND channel_id = $3
 	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID).Scan(&count)
 
 	if err != nil {
-		return false, fmt.Errorf("ошибка при проверке существования: %w", err)
+		return false, fmt.Errorf("ошибка при проверке: %w", err)
 	}
-
 	return count > 0, nil
 }
 
 func (db *DB) DeleteData(data Data) error {
+	ctx := context.Background()
 	exists, err := db.IfExists(data)
 	if err != nil {
-		return fmt.Errorf("Ошибка при проверке данных.")
+		return fmt.Errorf("ошибка при проверке существования")
 	}
 	if !exists {
-		return fmt.Errorf("Такой подписки не существует или она не принадлежит вам.")
+		return fmt.Errorf("такой подписки не существует")
 	}
 
-	_, err = db.Exec(`
+	_, err = db.Pool.Exec(ctx, `
 		DELETE FROM users
-		WHERE telegram_username = ? AND twitch_username = ? AND channel_id = ?
+		WHERE telegram_username = $1 AND twitch_username = $2 AND channel_id = $3
 	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID)
 
 	return err
+}
+
+func (db *DB) GetAllSubscriptions() ([]Data, error) {
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `SELECT twitch_username, channel_id FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []Data
+	for rows.Next() {
+		var d Data
+		if err := rows.Scan(&d.TwitchUsername, &d.ChannelID); err != nil {
+			return nil, err
+		}
+		result = append(result, d)
+	}
+	return result, nil
+}
+
+func (db *DB) GetAllTwitchUsernames() ([]string, error) {
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `SELECT DISTINCT twitch_username FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var usernames []string
+	for rows.Next() {
+		var username string
+		if err := rows.Scan(&username); err != nil {
+			return nil, err
+		}
+		usernames = append(usernames, username)
+	}
+	return usernames, nil
+}
+
+func (db *DB) GetAllChannelsForUser(username string) ([]int64, error) {
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `SELECT channel_id FROM users WHERE twitch_username = $1`, username)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка выборки каналов: %w", err)
+	}
+	defer rows.Close()
+
+	var channels []int64
+	for rows.Next() {
+		var ch int64
+		if err := rows.Scan(&ch); err != nil {
+			return nil, err
+		}
+		channels = append(channels, ch)
+	}
+	return channels, nil
 }
