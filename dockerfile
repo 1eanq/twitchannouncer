@@ -13,7 +13,7 @@ FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk add --no-cache sqlite
+RUN apk add --no-cache postgresql-client
 
 COPY --from=builder /app/bot .
 COPY --from=builder /app/config.yaml .

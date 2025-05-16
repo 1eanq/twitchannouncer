@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"twitchannouncer/internal/bot"
@@ -17,7 +18,15 @@ func main() {
 
 	go config.RefreshTokenPeriodically(&cfg)
 
-	db, err := database.InitDatabase(cfg.DatabasePath)
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		cfg.DatabaseUser,
+		cfg.DatabasePassword,
+		cfg.DatabaseHost,
+		cfg.DatabasePort,
+		cfg.DatabaseName,
+	)
+
+	db, err := database.InitDatabase(connStr)
 	if err != nil {
 		log.Fatal(err)
 	}
