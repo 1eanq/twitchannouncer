@@ -1,0 +1,28 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main  # автодеплой при пуше в main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no root@176.119.158.216 << 'EOF'
+            cd /root/twitchannouncer
+            git pull origin main
+            go build -o twitchannouncer ./cmd/app  # если у тебя main.go в cmd/app, иначе поменяй путь
+            systemctl restart twitchannouncer.service
+          EOF
