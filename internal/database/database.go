@@ -29,6 +29,9 @@ func InitDatabase(connStr string) (*DB, error) {
 		telegram_username TEXT NOT NULL,
 		channel_id BIGINT NOT NULL,
 		twitch_username TEXT NOT NULL,
+		latest_message BIGINT NOT NULL,
+		pro BOOLEAN DEFAULT FALSE,
+		admin BOOLEAN DEFAULT FALSE,
 		UNIQUE(twitch_username, channel_id)
 	)`)
 
@@ -174,4 +177,24 @@ func (db *DB) GetAllChannelsForUser(username string) ([]int64, error) {
 		channels = append(channels, ch)
 	}
 	return channels, nil
+}
+
+func (db *DB) IsPro(username string) (bool, error) {
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `SELECT pro FROM users WHERE telegram_username = $1`, username)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		var pro bool
+		if err := rows.Scan(&pro); err != nil {
+			return false, err
+		}
+		return pro, nil
+	}
+
+	// Пользователь не найден
+	return false, fmt.Errorf("user not found")
 }
