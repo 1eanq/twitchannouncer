@@ -13,16 +13,16 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Set up SSH
+      - name: Setup SSH
         uses: webfactory/ssh-agent@v0.8.0
         with:
-          ssh-key: ${{ secrets.VPS_KEY }}
+          ssh-private-key: ${{ secrets.VPS_PRIVATE_KEY }}
 
-      - name: Deploy to VPS
+      - name: Deploy via SSH
         run: |
-          ssh -o StrictHostKeyChecking=no root@176.119.158.216 << 'EOF'
-            cd /root/twitchannouncer
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            cd ~/twitchannouncer
             git pull origin main
-            go build -o twitchannouncer ./cmd/app
-            systemctl restart twitchannouncer.service
+            go build -o app ./cmd/app
+            systemctl restart twitchannouncer
           EOF
