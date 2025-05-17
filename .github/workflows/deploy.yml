@@ -22,6 +22,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no root@176.119.158.216 << 'EOF'
           cd /root/twitchannouncer
+          git pull
           export PATH=$PATH:/usr/local/go/bin
           make up
           EOF
