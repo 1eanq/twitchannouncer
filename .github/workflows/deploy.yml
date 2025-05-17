@@ -20,9 +20,7 @@ jobs:
 
       - name: Deploy via SSH
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            cd ~/twitchannouncer
-            git pull origin main
-            go build -o app ./cmd/app
-            systemctl restart twitchannouncer
+          cd /root/twitchannouncer
+          export PATH=$PATH:/usr/local/go/bin
+          make up
           EOF
