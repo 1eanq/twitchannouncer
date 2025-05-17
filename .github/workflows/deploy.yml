@@ -16,13 +16,13 @@ jobs:
       - name: Set up SSH
         uses: webfactory/ssh-agent@v0.8.0
         with:
-          ssh-key: ${{ secrets.SSH_KEY }}
+          ssh-key: ${{ secrets.VPS_KEY }}
 
       - name: Deploy to VPS
         run: |
           ssh -o StrictHostKeyChecking=no root@176.119.158.216 << 'EOF'
             cd /root/twitchannouncer
             git pull origin main
-            go build -o twitchannouncer ./cmd/app  # если у тебя main.go в cmd/app, иначе поменяй путь
+            go build -o twitchannouncer ./cmd/app
             systemctl restart twitchannouncer.service
           EOF
