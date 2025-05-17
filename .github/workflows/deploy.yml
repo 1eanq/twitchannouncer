@@ -20,6 +20,7 @@ jobs:
 
       - name: Deploy via SSH
         run: |
+          ssh root@176.119.158.216 << 'EOF'
           cd /root/twitchannouncer
           export PATH=$PATH:/usr/local/go/bin
           make up
