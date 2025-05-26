@@ -1,7 +1,8 @@
 package database
 
 type Data struct {
+	TelegramID       int64
 	TelegramUsername string
-	ChannelID        int64
 	TwitchUsername   string
+	ChannelID        int64
 }

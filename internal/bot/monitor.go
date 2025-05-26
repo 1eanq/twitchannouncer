@@ -73,9 +73,8 @@ func (m *Monitor) checkAllStreams() {
 		}
 
 		if isLive && !wasChecked || isLive && !prev {
-			// Только если стрим начался
 			messageText := fmt.Sprintf(
-				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
+				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью @Twitchmanannouncer_bot",
 				username, info.Title, info.GameName, username)
 
 			for _, chID := range channels {
@@ -94,7 +93,6 @@ func (m *Monitor) checkAllStreams() {
 				m.lastMsgIDs[username][chID] = sentMsg.MessageID
 			}
 		} else if !isLive && wasChecked && prev {
-			// Стрим закончился
 			for _, chID := range channels {
 				if msgID, ok := m.lastMsgIDs[username][chID]; ok {
 					del := tgbotapi.NewDeleteMessage(chID, msgID)
