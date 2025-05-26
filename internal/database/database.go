@@ -88,12 +88,12 @@ func (db *DB) StoreData(data Data) error {
 	return nil
 }
 
-func (db *DB) GetUserSubscriptions(telegramUsername string) ([]Data, error) {
+func (db *DB) GetUserSubscriptions(id int64) ([]Data, error) {
 	ctx := context.Background()
 	rows, err := db.Pool.Query(ctx, `
-		SELECT twitch_username, channel_id FROM users
-		WHERE telegram_username = $1
-	`, telegramUsername)
+		SELECT twitch_username, channel_id FROM subscriptions
+		WHERE user_id = $1
+	`, id)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка выборки: %w", err)
 	}
@@ -114,8 +114,8 @@ func (db *DB) IfExists(data Data) (bool, error) {
 	ctx := context.Background()
 	var count int
 	err := db.Pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM users
-		WHERE telegram_username = $1 AND twitch_username = $2 AND channel_id = $3
+		SELECT COUNT(*) FROM subscriptions
+		WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
 	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID).Scan(&count)
 
 	if err != nil {
@@ -135,8 +135,8 @@ func (db *DB) DeleteData(data Data) error {
 	}
 
 	_, err = db.Pool.Exec(ctx, `
-		DELETE FROM users
-		WHERE telegram_username = $1 AND twitch_username = $2 AND channel_id = $3
+		DELETE FROM subscriptions
+		WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
 	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID)
 
 	return err
@@ -144,7 +144,7 @@ func (db *DB) DeleteData(data Data) error {
 
 func (db *DB) GetAllSubscriptions() ([]Data, error) {
 	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT twitch_username, channel_id FROM users`)
+	rows, err := db.Pool.Query(ctx, `SELECT twitch_username, channel_id FROM subscriptions`)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (db *DB) GetAllSubscriptions() ([]Data, error) {
 
 func (db *DB) GetAllTwitchUsernames() ([]string, error) {
 	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT DISTINCT twitch_username FROM users`)
+	rows, err := db.Pool.Query(ctx, `SELECT DISTINCT twitch_username FROM subscriptions`)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (db *DB) GetAllTwitchUsernames() ([]string, error) {
 
 func (db *DB) GetAllChannelsForUser(username string) ([]int64, error) {
 	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT channel_id FROM users WHERE twitch_username = $1`, username)
+	rows, err := db.Pool.Query(ctx, `SELECT channel_id FROM subscriptions WHERE twitch_username = $1`, username)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка выборки каналов: %w", err)
 	}
@@ -199,9 +199,9 @@ func (db *DB) GetAllChannelsForUser(username string) ([]int64, error) {
 	return channels, nil
 }
 
-func (db *DB) IsPro(username string) (bool, error) {
+func (db *DB) IsPro(id int64) (bool, error) {
 	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT pro FROM users WHERE telegram_username = $1`, username)
+	rows, err := db.Pool.Query(ctx, `SELECT pro FROM users WHERE telegram_username = $1`, id)
 	if err != nil {
 		return false, err
 	}
@@ -215,6 +215,24 @@ func (db *DB) IsPro(username string) (bool, error) {
 		return pro, nil
 	}
 
-	// Пользователь не найден
+	return false, fmt.Errorf("user not found")
+}
+
+func (db *DB) IsAdmin(id int) (bool, error) {
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `SELECT admin FROM users WHERE telegram_id = $1`, id)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		var pro bool
+		if err := rows.Scan(&pro); err != nil {
+			return false, err
+		}
+		return pro, nil
+	}
+
 	return false, fmt.Errorf("user not found")
 }
