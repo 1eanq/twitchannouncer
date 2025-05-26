@@ -22,7 +22,6 @@ func InitDatabase(connStr string) (*DB, error) {
 		return nil, fmt.Errorf("ошибка подключения к PostgreSQL: %w", err)
 	}
 
-	// Создание таблицы пользователей
 	_, err = pool.Exec(ctx, `
 	CREATE TABLE IF NOT EXISTS users (
 		telegram_id BIGINT PRIMARY KEY,
@@ -35,7 +34,6 @@ func InitDatabase(connStr string) (*DB, error) {
 		return nil, fmt.Errorf("ошибка при создании таблицы users: %w", err)
 	}
 
-	// Создание таблицы подписок
 	_, err = pool.Exec(ctx, `
 	CREATE TABLE IF NOT EXISTS subscriptions (
 		id SERIAL PRIMARY KEY,
