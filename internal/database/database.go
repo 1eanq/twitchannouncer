@@ -22,7 +22,35 @@ func InitDatabase(connStr string) (*DB, error) {
 		return nil, fmt.Errorf("ошибка подключения к PostgreSQL: %w", err)
 	}
 
-	log.Println("Подключение к PostgreSQL установлено")
+	// Создание таблицы пользователей
+	_, err = pool.Exec(ctx, `
+	CREATE TABLE IF NOT EXISTS users (
+		telegram_id BIGINT PRIMARY KEY,
+		telegram_username TEXT,
+		pro BOOLEAN DEFAULT FALSE,
+		admin BOOLEAN DEFAULT FALSE
+	)`)
+
+	if err != nil {
+		return nil, fmt.Errorf("ошибка при создании таблицы users: %w", err)
+	}
+
+	// Создание таблицы подписок
+	_, err = pool.Exec(ctx, `
+	CREATE TABLE IF NOT EXISTS subscriptions (
+		id SERIAL PRIMARY KEY,
+		user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+		channel_id BIGINT NOT NULL,
+		twitch_username TEXT NOT NULL,
+		latest_message BIGINT NOT NULL DEFAULT 0,
+		UNIQUE(user_id, channel_id, twitch_username)
+	)`)
+
+	if err != nil {
+		return nil, fmt.Errorf("ошибка при создании таблицы subscriptions: %w", err)
+	}
+
+	log.Println("Подключение к PostgreSQL установлено и таблицы созданы")
 	return &DB{Pool: pool}, nil
 }
 
