@@ -55,7 +55,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				data.TelegramUsername = update.Message.From.UserName
 
 			case "list":
-				subs, err := db.GetUserSubscriptions(update.Message.From.UserName)
+				subs, err := db.GetUserSubscriptions(update.Message.From.ID)
 				if err != nil {
 					bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при получении списка ваших подписок."))
 					continue
