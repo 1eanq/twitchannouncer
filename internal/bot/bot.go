@@ -51,7 +51,9 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 			case "new":
 				bot.Send(tgbotapi.NewMessage(chatID, "Напиши Twitch username:"))
 				userState[chatID] = "awaiting_username"
+				data.TelegramID = update.Message.From.ID
 				data.TelegramUsername = update.Message.From.UserName
+
 			case "list":
 				subs, err := db.GetUserSubscriptions(update.Message.From.UserName)
 				if err != nil {
@@ -117,9 +119,11 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 
 		if userState[chatID] == "awaiting_delete_username" {
 			deleteTemp[chatID] = database.Data{
+				TelegramID:       update.Message.From.ID,
 				TelegramUsername: update.Message.From.UserName,
 				TwitchUsername:   strings.ToLower(strings.TrimSpace(update.Message.Text)),
 			}
+
 			bot.Send(tgbotapi.NewMessage(chatID, "Теперь введите ID канала, связанный с этим Twitch username:"))
 			userState[chatID] = "awaiting_delete_channel"
 			continue

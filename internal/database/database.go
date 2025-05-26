@@ -22,23 +22,6 @@ func InitDatabase(connStr string) (*DB, error) {
 		return nil, fmt.Errorf("ошибка подключения к PostgreSQL: %w", err)
 	}
 
-	// Создание таблицы
-	_, err = pool.Exec(ctx, `
-	CREATE TABLE IF NOT EXISTS users (
-		id SERIAL PRIMARY KEY,
-		telegram_username TEXT NOT NULL,
-		channel_id BIGINT NOT NULL,
-		twitch_username TEXT NOT NULL,
-		latest_message BIGINT NOT NULL,
-		pro BOOLEAN DEFAULT FALSE,
-		admin BOOLEAN DEFAULT FALSE,
-		UNIQUE(twitch_username, channel_id)
-	)`)
-
-	if err != nil {
-		return nil, fmt.Errorf("ошибка при создании таблицы: %w", err)
-	}
-
 	log.Println("Подключение к PostgreSQL установлено")
 	return &DB{Pool: pool}, nil
 }
@@ -46,24 +29,35 @@ func InitDatabase(connStr string) (*DB, error) {
 func (db *DB) StoreData(data Data) error {
 	ctx := context.Background()
 
-	// Проверка существования
+	// Вставка или обновление пользователя по Telegram ID
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO users (telegram_id, telegram_username)
+		VALUES ($1, $2)
+		ON CONFLICT (telegram_id) DO UPDATE SET telegram_username = EXCLUDED.telegram_username
+	`, data.TelegramID, data.TelegramUsername)
+
+	if err != nil {
+		return fmt.Errorf("ошибка вставки/обновления пользователя: %w", err)
+	}
+
+	// Проверка существования подписки
 	var exists int
-	err := db.Pool.QueryRow(ctx, `
-		SELECT 1 FROM users WHERE twitch_username = $1 AND channel_id = $2
-	`, data.TwitchUsername, data.ChannelID).Scan(&exists)
+	err = db.Pool.QueryRow(ctx, `
+		SELECT 1 FROM subscriptions WHERE user_id = $1 AND channel_id = $2 AND twitch_username = $3
+	`, data.TelegramID, data.ChannelID, data.TwitchUsername).Scan(&exists)
 
 	if err == nil {
 		return fmt.Errorf("такая подписка уже существует")
 	}
 
-	// Вставка
+	// Вставка подписки
 	_, err = db.Pool.Exec(ctx, `
-		INSERT INTO users (telegram_username, channel_id, twitch_username)
+		INSERT INTO subscriptions (user_id, channel_id, twitch_username)
 		VALUES ($1, $2, $3)
-	`, data.TelegramUsername, data.ChannelID, data.TwitchUsername)
+	`, data.TelegramID, data.ChannelID, data.TwitchUsername)
 
 	if err != nil {
-		return fmt.Errorf("ошибка вставки данных: %w", err)
+		return fmt.Errorf("ошибка вставки подписки: %w", err)
 	}
 	return nil
 }
