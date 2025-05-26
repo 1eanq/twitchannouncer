@@ -74,7 +74,7 @@ func (m *Monitor) checkAllStreams() {
 
 		if isLive && !wasChecked || isLive && !prev {
 			messageText := fmt.Sprintf(
-				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer\\_bot](https://t.me/Twitchmanannouncer_bot)",
+				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
 				username, info.Title, info.GameName, username)
 
 			for _, chID := range channels {
