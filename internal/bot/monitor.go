@@ -76,7 +76,7 @@ func (m *Monitor) checkAllStreams() {
 			// Только если стрим начался
 			messageText := fmt.Sprintf(
 				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
-				username, info.GameName, info.Title, username)
+				username, info.Title, info.GameName, username)
 
 			for _, chID := range channels {
 				msg := tgbotapi.NewMessage(chID, messageText)
