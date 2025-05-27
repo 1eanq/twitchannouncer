@@ -93,7 +93,9 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 		if userState[chatID] == "awaiting_channel" {
 			if update.Message.ForwardFromChat != nil && update.Message.ForwardFromChat.Type == "channel" {
 				channelID := update.Message.ForwardFromChat.ID
+				channelName := update.Message.ForwardFromChat.UserName
 				data.ChannelID = channelID
+				data.ChannelName = channelName
 
 				userState[chatID] = ""
 
@@ -108,7 +110,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				}
 
 				bot.Send(tgbotapi.NewMessage(chatID,
-					fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChannelID)))
+					fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%d", data.TwitchUsername, data.ChannelName)))
 
 			} else {
 				bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, чтобы я мог получить его ID."))

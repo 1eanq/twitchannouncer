@@ -5,6 +5,7 @@ type UserData struct {
 	TelegramUsername string
 	TwitchUsername   string
 	ChannelID        int64
+	ChannelName      string
 }
 
 type StreamData struct {
