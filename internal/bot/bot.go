@@ -56,6 +56,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				subs, err := db.GetUserSubscriptions(update.Message.From.ID)
 				if err != nil {
 					bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при получении списка ваших подписок."))
+					fmt.Println(err.Error())
 					continue
 				}
 
@@ -84,7 +85,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 
 		if userState[chatID] == "awaiting_username" {
 			data.TwitchUsername = strings.ToLower(strings.TrimSpace(update.Message.Text))
-			bot.Send(tgbotapi.NewMessage(chatID, "Перешлите сообщение из канала"))
+			bot.Send(tgbotapi.NewMessage(chatID, "Перешлите сообщение из канала\n*Канал должен быть открытым!*"))
 			userState[chatID] = "awaiting_channel"
 			continue
 		}
@@ -102,7 +103,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				err := db.StoreData(data)
 				if err != nil {
 					if strings.Contains(err.Error(), "уже существует") {
-						bot.Send(tgbotapi.NewMessage(chatID, "Такая запись уже существует!"))
+						bot.Send(tgbotapi.NewMessage(chatID, "Такая подписка уже существует!"))
 					} else {
 						bot.Send(tgbotapi.NewMessage(chatID, "Произошла ошибка при добавлении данных."))
 					}
@@ -124,7 +125,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				TwitchUsername:   strings.ToLower(strings.TrimSpace(update.Message.Text)),
 			}
 
-			bot.Send(tgbotapi.NewMessage(chatID, "Теперь введите ID канала, связанный с этим Twitch username:"))
+			bot.Send(tgbotapi.NewMessage(chatID, "Теперь перешлите сообщение из канала, связанного с этим юзернеймом:"))
 			userState[chatID] = "awaiting_delete_channel"
 			continue
 		}
