@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 	"twitchannouncer/internal/database"
@@ -68,7 +67,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				var msg strings.Builder
 				msg.WriteString("Ваши активные подписки:\n")
 				for _, sub := range subs {
-					msg.WriteString(fmt.Sprintf("- %s → %d\n", sub.TwitchUsername, sub.ChannelID))
+					msg.WriteString(fmt.Sprintf("- %s → %d\n", sub.TwitchUsername, sub.ChannelName))
 				}
 
 				bot.Send(tgbotapi.NewMessage(chatID, msg.String()))
@@ -132,26 +131,28 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 
 		if userState[chatID] == "awaiting_delete_channel" {
 			dataToDelete := deleteTemp[chatID]
-			channelIDStr := "-100" + update.Message.Text
-			channelIDInt, err := strconv.Atoi(channelIDStr)
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(chatID, "Неверный формат ID канала."))
-				continue
-			}
-			dataToDelete.TelegramUsername = deleteTemp[chatID].TelegramUsername
-			dataToDelete.TwitchUsername = deleteTemp[chatID].TwitchUsername
-			dataToDelete.ChannelID = int64(channelIDInt)
 
-			err = db.DeleteData(dataToDelete)
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(chatID, err.Error()))
-				continue
-			}
+			if update.Message.ForwardFromChat != nil && update.Message.ForwardFromChat.Type == "channel" {
+				channelID := update.Message.ForwardFromChat.ID
+				channelName := update.Message.ForwardFromChat.UserName
 
-			bot.Send(tgbotapi.NewMessage(chatID, "Подписка успешно удалена!"))
-			userState[chatID] = ""
-			delete(deleteTemp, chatID)
-			continue
+				dataToDelete.TelegramUsername = deleteTemp[chatID].TelegramUsername
+				dataToDelete.TwitchUsername = deleteTemp[chatID].TwitchUsername
+				dataToDelete.ChannelID = channelID
+				dataToDelete.ChannelName = channelName
+
+				err := db.DeleteData(dataToDelete)
+				if err != nil {
+					bot.Send(tgbotapi.NewMessage(chatID, err.Error()))
+				} else {
+					bot.Send(tgbotapi.NewMessage(chatID, "Подписка успешно удалена!"))
+				}
+
+				userState[chatID] = ""
+				delete(deleteTemp, chatID)
+			} else {
+				bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, из которого нужно удалить подписку."))
+			}
 		}
 
 	}

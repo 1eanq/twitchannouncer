@@ -78,9 +78,9 @@ func (db *DB) StoreData(data UserData) error {
 
 	// Вставка подписки
 	_, err = db.Pool.Exec(ctx, `
-		INSERT INTO subscriptions (user_id, channel_id, twitch_username)
+		INSERT INTO subscriptions (user_id, channel_id, channel_name, twitch_username)
 		VALUES ($1, $2, $3)
-	`, data.TelegramID, data.ChannelID, data.TwitchUsername)
+	`, data.TelegramID, data.ChannelID, data.ChannelName, data.TwitchUsername)
 
 	if err != nil {
 		return fmt.Errorf("ошибка вставки подписки: %w", err)
