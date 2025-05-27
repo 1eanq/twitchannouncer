@@ -67,7 +67,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				var msg strings.Builder
 				msg.WriteString("Ваши активные подписки:\n")
 				for _, sub := range subs {
-					msg.WriteString(fmt.Sprintf("- %s → %d\n", sub.TwitchUsername, sub.ChannelName))
+					msg.WriteString(fmt.Sprintf("- %s → %s\n", sub.TwitchUsername, sub.ChannelName))
 				}
 
 				bot.Send(tgbotapi.NewMessage(chatID, msg.String()))
