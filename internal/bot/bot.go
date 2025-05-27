@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -92,29 +91,28 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 		}
 
 		if userState[chatID] == "awaiting_channel" {
-			channelIDStr := "-100" + update.Message.Text
-			channelIDInt, err := strconv.Atoi(channelIDStr)
-			if err != nil {
-				bot.Send(tgbotapi.NewMessage(chatID, "Неверный формат ID канала"))
-				log.Printf("Ошибка преобразования ID: %v", err)
+			if update.Message.ForwardFromChat != nil && update.Message.ForwardFromChat.Type == "channel" {
+				channelID := update.Message.ForwardFromChat.ID
+				data.ChannelID = channelID
 
-			}
-			data.ChannelID = int64(channelIDInt)
+				userState[chatID] = ""
 
-			userState[chatID] = ""
-
-			err = db.StoreData(data)
-			if err != nil {
-				if strings.Contains(err.Error(), "уже существует") {
-					bot.Send(tgbotapi.NewMessage(chatID, "Такая запись уже существует!"))
-					continue
-				} else {
-					bot.Send(tgbotapi.NewMessage(chatID, "Произошла ошибка при добавлении данных."))
-					continue
+				err := db.StoreData(data)
+				if err != nil {
+					if strings.Contains(err.Error(), "уже существует") {
+						bot.Send(tgbotapi.NewMessage(chatID, "Такая запись уже существует!"))
+					} else {
+						bot.Send(tgbotapi.NewMessage(chatID, "Произошла ошибка при добавлении данных."))
+					}
+					return
 				}
-			}
 
-			bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChannelID)))
+				bot.Send(tgbotapi.NewMessage(chatID,
+					fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал %d", data.TwitchUsername, data.ChannelID)))
+
+			} else {
+				bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, чтобы я мог получить его ID."))
+			}
 		}
 
 		if userState[chatID] == "awaiting_delete_username" {
