@@ -94,6 +94,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 			if update.Message.ForwardFromChat != nil && update.Message.ForwardFromChat.Type == "channel" {
 				channelID := update.Message.ForwardFromChat.ID
 				channelName := update.Message.ForwardFromChat.UserName
+				fmt.Println(channelID, channelName)
 				data.ChannelID = channelID
 				data.ChannelName = channelName
 
