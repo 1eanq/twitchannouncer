@@ -52,7 +52,7 @@ func InitDatabase(connStr string) (*DB, error) {
 	return &DB{Pool: pool}, nil
 }
 
-func (db *DB) StoreData(data Data) error {
+func (db *DB) StoreData(data UserData) error {
 	ctx := context.Background()
 
 	// Вставка или обновление пользователя по Telegram ID
@@ -88,7 +88,7 @@ func (db *DB) StoreData(data Data) error {
 	return nil
 }
 
-func (db *DB) GetUserSubscriptions(id int64) ([]Data, error) {
+func (db *DB) GetUserSubscriptions(id int64) ([]UserData, error) {
 	ctx := context.Background()
 	rows, err := db.Pool.Query(ctx, `
 		SELECT twitch_username, channel_id FROM subscriptions
@@ -99,9 +99,9 @@ func (db *DB) GetUserSubscriptions(id int64) ([]Data, error) {
 	}
 	defer rows.Close()
 
-	var subs []Data
+	var subs []UserData
 	for rows.Next() {
-		var d Data
+		var d UserData
 		if err := rows.Scan(&d.TwitchUsername, &d.ChannelID); err != nil {
 			return nil, err
 		}
@@ -110,7 +110,7 @@ func (db *DB) GetUserSubscriptions(id int64) ([]Data, error) {
 	return subs, nil
 }
 
-func (db *DB) IfExists(data Data) (bool, error) {
+func (db *DB) IfExists(data UserData) (bool, error) {
 	ctx := context.Background()
 	var count int
 	err := db.Pool.QueryRow(ctx, `
@@ -124,7 +124,7 @@ func (db *DB) IfExists(data Data) (bool, error) {
 	return count > 0, nil
 }
 
-func (db *DB) DeleteData(data Data) error {
+func (db *DB) DeleteData(data UserData) error {
 	ctx := context.Background()
 	exists, err := db.IfExists(data)
 	if err != nil {
@@ -142,7 +142,7 @@ func (db *DB) DeleteData(data Data) error {
 	return err
 }
 
-func (db *DB) GetAllSubscriptions() ([]Data, error) {
+func (db *DB) GetAllSubscriptions() ([]UserData, error) {
 	ctx := context.Background()
 	rows, err := db.Pool.Query(ctx, `SELECT twitch_username, channel_id FROM subscriptions`)
 	if err != nil {
@@ -150,9 +150,9 @@ func (db *DB) GetAllSubscriptions() ([]Data, error) {
 	}
 	defer rows.Close()
 
-	var result []Data
+	var result []UserData
 	for rows.Next() {
-		var d Data
+		var d UserData
 		if err := rows.Scan(&d.TwitchUsername, &d.ChannelID); err != nil {
 			return nil, err
 		}
@@ -227,12 +227,54 @@ func (db *DB) IsAdmin(id int) (bool, error) {
 	defer rows.Close()
 
 	if rows.Next() {
-		var pro bool
-		if err := rows.Scan(&pro); err != nil {
+		var admin bool
+		if err := rows.Scan(&admin); err != nil {
 			return false, err
 		}
-		return pro, nil
+		return admin, nil
 	}
 
 	return false, fmt.Errorf("user not found")
+}
+
+func (db *DB) GetStreamData(username string) (*StreamData, error) {
+	ctx := context.Background()
+	row := db.Pool.QueryRow(ctx, `
+		SELECT user_id, twitch_username, live, checked, latest_message
+		FROM subscriptions
+		WHERE twitch_username = $1
+		LIMIT 1
+	`, username)
+
+	var data StreamData
+	err := row.Scan(&data.UserID, &data.TwitchUsername, &data.Live, &data.Checked, &data.LatestMessageID)
+	if err != nil {
+		return nil, fmt.Errorf("не удалось получить данные о стриме: %w", err)
+	}
+
+	return &data, nil
+}
+
+func (db *DB) StoreMessageID(msgID int) error {
+	ctx := context.Background()
+
+	_, err := db.Pool.Exec(ctx, `
+		INSERT INTO subscriptions (latest_message) VALUES ($1)
+	`, msgID)
+
+	if err != nil {
+		return fmt.Errorf("ошибка вставки/обновления пользователя: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) UpdateStreamStatus(username string, live bool, checked bool, latestMessageID int) error {
+	ctx := context.Background()
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE subscriptions
+		SET live = $1, checked = $2, latest_message = $3
+		WHERE twitch_username = $4
+	`, live, checked, latestMessageID, username)
+	return err
 }

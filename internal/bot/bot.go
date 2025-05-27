@@ -14,8 +14,8 @@ import (
 )
 
 var userState = make(map[int64]string)
-var deleteTemp = make(map[int64]database.Data)
-var data database.Data
+var deleteTemp = make(map[int64]database.UserData)
+var data database.UserData
 
 func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 	ctx := context.Background()
@@ -118,7 +118,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 		}
 
 		if userState[chatID] == "awaiting_delete_username" {
-			deleteTemp[chatID] = database.Data{
+			deleteTemp[chatID] = database.UserData{
 				TelegramID:       update.Message.From.ID,
 				TelegramUsername: update.Message.From.UserName,
 				TwitchUsername:   strings.ToLower(strings.TrimSpace(update.Message.Text)),
