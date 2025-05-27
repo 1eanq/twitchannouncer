@@ -14,11 +14,9 @@ import (
 )
 
 type Monitor struct {
-	bot        *tgbotapi.BotAPI
-	db         *database.DB
-	cfg        config.Config
-	lastStatus map[string]bool
-	lastMsgIDs map[string]map[int64]int // username -> channelID -> messageID
+	bot *tgbotapi.BotAPI
+	db  *database.DB
+	cfg config.Config
 }
 
 type StreamInfo struct {
@@ -30,11 +28,9 @@ type StreamInfo struct {
 // NewMonitor создает новый мониторинг
 func NewMonitor(bot *tgbotapi.BotAPI, db *database.DB, cfg config.Config) *Monitor {
 	return &Monitor{
-		bot:        bot,
-		db:         db,
-		cfg:        cfg,
-		lastStatus: make(map[string]bool),
-		lastMsgIDs: make(map[string]map[int64]int),
+		bot: bot,
+		db:  db,
+		cfg: cfg,
 	}
 }
 
@@ -63,8 +59,12 @@ func (m *Monitor) checkAllStreams() {
 	for _, username := range usernames {
 		isLive, info := m.checkStreamStatus(username)
 
-		prev, wasChecked := m.lastStatus[username]
-		m.lastStatus[username] = isLive
+		// Получаем текущее состояние из базы
+		streamData, err := m.db.GetStreamData(username)
+		if err != nil {
+			log.Printf("Ошибка получения данных о стриме для %s: %v", username, err)
+			continue
+		}
 
 		channels, err := m.db.GetAllChannelsForUser(username)
 		if err != nil {
@@ -72,7 +72,8 @@ func (m *Monitor) checkAllStreams() {
 			continue
 		}
 
-		if isLive && !wasChecked || isLive && !prev {
+		// Стрим начался
+		if isLive && (!streamData.Checked || !streamData.Live) {
 			messageText := fmt.Sprintf(
 				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
 				username, info.Title, info.GameName, username)
@@ -87,21 +88,28 @@ func (m *Monitor) checkAllStreams() {
 					continue
 				}
 
-				if _, ok := m.lastMsgIDs[username]; !ok {
-					m.lastMsgIDs[username] = make(map[int64]int)
+				// Обновляем статус в базе
+				err = m.db.UpdateStreamStatus(username, true, true, sentMsg.MessageID)
+				if err != nil {
+					log.Printf("Ошибка обновления статуса стрима: %v", err)
 				}
-				m.lastMsgIDs[username][chID] = sentMsg.MessageID
 			}
-		} else if !isLive && wasChecked && prev {
+		}
+
+		// Стрим закончился
+		if !isLive && streamData.Checked && streamData.Live {
 			for _, chID := range channels {
-				if msgID, ok := m.lastMsgIDs[username][chID]; ok {
-					del := tgbotapi.NewDeleteMessage(chID, msgID)
-					_, err := m.bot.Request(del)
-					if err != nil {
-						log.Printf("Ошибка при удалении сообщения: %v", err)
-					}
-					delete(m.lastMsgIDs[username], chID)
+				del := tgbotapi.NewDeleteMessage(chID, streamData.LatestMessageID)
+				_, err := m.bot.Request(del)
+				if err != nil {
+					log.Printf("Ошибка при удалении сообщения: %v", err)
 				}
+			}
+
+			// Сброс статуса в базе
+			err = m.db.UpdateStreamStatus(username, false, true, 0)
+			if err != nil {
+				log.Printf("Ошибка обновления статуса стрима: %v", err)
 			}
 		}
 	}
