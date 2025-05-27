@@ -79,7 +79,7 @@ func (db *DB) StoreData(data UserData) error {
 	// Вставка подписки
 	_, err = db.Pool.Exec(ctx, `
 		INSERT INTO subscriptions (user_id, channel_id, channel_name, twitch_username)
-		VALUES ($1, $2, $3)
+		VALUES ($1, $2, $3, $4)
 	`, data.TelegramID, data.ChannelID, data.ChannelName, data.TwitchUsername)
 
 	if err != nil {
