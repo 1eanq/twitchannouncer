@@ -91,7 +91,7 @@ func (db *DB) StoreData(data UserData) error {
 func (db *DB) GetUserSubscriptions(id int64) ([]UserData, error) {
 	ctx := context.Background()
 	rows, err := db.Pool.Query(ctx, `
-		SELECT twitch_username, channel_id FROM subscriptions
+		SELECT twitch_username, channel_name FROM subscriptions
 		WHERE user_id = $1
 	`, id)
 	if err != nil {
@@ -102,7 +102,7 @@ func (db *DB) GetUserSubscriptions(id int64) ([]UserData, error) {
 	var subs []UserData
 	for rows.Next() {
 		var d UserData
-		if err := rows.Scan(&d.TwitchUsername, &d.ChannelID); err != nil {
+		if err := rows.Scan(&d.TwitchUsername, &d.ChannelName); err != nil {
 			return nil, err
 		}
 		subs = append(subs, d)
