@@ -85,7 +85,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 
 		if userState[chatID] == "awaiting_username" {
 			data.TwitchUsername = strings.ToLower(strings.TrimSpace(update.Message.Text))
-			bot.Send(tgbotapi.NewMessage(chatID, "Отправьте ID канала"))
+			bot.Send(tgbotapi.NewMessage(chatID, "Перешлите сообщение из канала"))
 			userState[chatID] = "awaiting_channel"
 			continue
 		}
