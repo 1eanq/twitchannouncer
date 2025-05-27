@@ -144,7 +144,7 @@ func (db *DB) DeleteData(data UserData) error {
 
 func (db *DB) GetAllSubscriptions() ([]UserData, error) {
 	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT twitch_username, channel_id FROM subscriptions`)
+	rows, err := db.Pool.Query(ctx, `SELECT twitch_username, channel_name FROM subscriptions`)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (db *DB) GetAllSubscriptions() ([]UserData, error) {
 	var result []UserData
 	for rows.Next() {
 		var d UserData
-		if err := rows.Scan(&d.TwitchUsername, &d.ChannelID); err != nil {
+		if err := rows.Scan(&d.TwitchUsername, &d.ChannelName); err != nil {
 			return nil, err
 		}
 		result = append(result, d)
