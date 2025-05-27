@@ -110,7 +110,7 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 				}
 
 				bot.Send(tgbotapi.NewMessage(chatID,
-					fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%d", data.TwitchUsername, data.ChannelName)))
+					fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", data.TwitchUsername, data.ChannelName)))
 
 			} else {
 				bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, чтобы я мог получить его ID."))
