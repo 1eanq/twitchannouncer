@@ -116,7 +116,7 @@ func (db *DB) IfExists(data UserData) (bool, error) {
 	err := db.Pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM subscriptions
 		WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
-	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID).Scan(&count)
+	`, data.TelegramID, data.TwitchUsername, data.ChannelID).Scan(&count)
 
 	if err != nil {
 		return false, fmt.Errorf("ошибка при проверке: %w", err)
@@ -137,7 +137,7 @@ func (db *DB) DeleteData(data UserData) error {
 	_, err = db.Pool.Exec(ctx, `
 		DELETE FROM subscriptions
 		WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
-	`, data.TelegramUsername, data.TwitchUsername, data.ChannelID)
+	`, data.TelegramID, data.TwitchUsername, data.ChannelID)
 
 	return err
 }
