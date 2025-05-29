@@ -40,10 +40,10 @@ func (c *Client) NewRequest(method, url string, body []byte) (*http.Request, err
 
 	req.Header.Set("Authorization", "Basic "+authEncoded)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Idempotence-Key", generateIdempotenceKey()) // уникальный ключ
+	req.Header.Set("Idempotence-Key", generateIdempotenceKey())
 	return req, nil
 }
 
 func generateIdempotenceKey() string {
-	return time.Now().Format("20060102150405") // примитивный ключ, можно заменить UUID
+	return time.Now().Format("20060102150405")
 }

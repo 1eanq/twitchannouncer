@@ -60,7 +60,6 @@ func InitDatabase(connStr string) (*DB, error) {
 func (db *DB) StoreData(data UserData) error {
 	ctx := context.Background()
 
-	// Вставка или обновление пользователя по Telegram ID
 	_, err := db.Pool.Exec(ctx, `
 		INSERT INTO users (telegram_id, telegram_username)
 		VALUES ($1, $2)
@@ -71,7 +70,6 @@ func (db *DB) StoreData(data UserData) error {
 		return fmt.Errorf("ошибка вставки/обновления пользователя: %w", err)
 	}
 
-	// Проверка существования подписки
 	var exists int
 	err = db.Pool.QueryRow(ctx, `
 		SELECT 1 FROM subscriptions WHERE user_id = $1 AND channel_id = $2 AND twitch_username = $3
@@ -81,7 +79,6 @@ func (db *DB) StoreData(data UserData) error {
 		return fmt.Errorf("такая подписка уже существует")
 	}
 
-	// Вставка подписки
 	_, err = db.Pool.Exec(ctx, `
 		INSERT INTO subscriptions (user_id, channel_id, channel_name, twitch_username)
 		VALUES ($1, $2, $3, $4)
@@ -202,25 +199,6 @@ func (db *DB) GetAllChannelsForUser(username string) ([]int64, error) {
 		channels = append(channels, ch)
 	}
 	return channels, nil
-}
-
-func (db *DB) IsPro(id int64) (bool, error) {
-	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT pro FROM users WHERE telegram_username = $1`, id)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	if rows.Next() {
-		var pro bool
-		if err := rows.Scan(&pro); err != nil {
-			return false, err
-		}
-		return pro, nil
-	}
-
-	return false, fmt.Errorf("user not found")
 }
 
 func (db *DB) IsAdmin(id int) (bool, error) {
