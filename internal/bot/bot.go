@@ -200,13 +200,13 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	bot.Send(tgbotapi.NewMessage(chatID, msg))
 }
 
-func StartProExpiryChecker(db *database.DB, interval time.Duration) {
+func StartProExpiryChecker(bot *tgbotapi.BotAPI, db *database.DB, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		for range ticker.C {
-			err := db.RemoveExpiredProUsers()
+			err := db.RemoveExpiredProUsers(bot)
 			if err != nil {
-				// лог ошибки
+				log.Printf("❗ Ошибка при удалении просроченных подписок: %v", err)
 			}
 		}
 	}()
