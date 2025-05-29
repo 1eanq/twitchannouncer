@@ -2,11 +2,15 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"twitchannouncer/internal/config"
 	"twitchannouncer/internal/database"
+	"twitchannouncer/internal/yookassa"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -77,7 +81,7 @@ func handleCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update
 		bot.Send(tgbotapi.NewMessage(chatID, "Введите Twitch username, который вы хотите удалить:"))
 		userState[chatID] = "awaiting_delete_username"
 	case "pro":
-		HandleProCommand(bot, db, update.Message)
+		handleProCommand(bot, db, update)
 	default:
 		bot.Send(tgbotapi.NewMessage(chatID, "Неизвестная команда"))
 	}
@@ -170,17 +174,72 @@ func handleAwaitingDeleteChannel(bot *tgbotapi.BotAPI, db *database.DB, update t
 	}
 }
 
-func HandleProCommand(bot *tgbotapi.BotAPI, db *database.DB, message *tgbotapi.Message) {
-	telegramID := message.From.ID
+func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
+	chatID := update.Message.Chat.ID
+	userID := update.Message.From.ID
 
-	//TODO: Платежная система
-	err := db.SetProStatus(telegramID, true)
+	isPro, err := db.IsUserPro(userID)
 	if err != nil {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "❌ Произошла ошибка при активации PRO.")
-		bot.Send(msg)
+		bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при проверке статуса. Попробуйте позже."))
 		return
 	}
 
-	msg := tgbotapi.NewMessage(message.Chat.ID, "✅ Статус PRO успешно активирован! Спасибо за поддержку ❤️")
-	bot.Send(msg)
+	if isPro {
+		bot.Send(tgbotapi.NewMessage(chatID, "У вас уже активна подписка Pro. Спасибо!"))
+		return
+	}
+
+	payURL, err := yookassa.CreateYooKassaPayment(userID)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при создании платежа. Попробуйте позже."))
+		return
+	}
+
+	msg := fmt.Sprintf("Для активации подписки Pro перейдите по ссылке и оплатите:\n%s", payURL)
+	bot.Send(tgbotapi.NewMessage(chatID, msg))
+}
+
+func YooKassaWebhookHandler(db *database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Event  string `json:"event"`
+			Object struct {
+				ID       string `json:"id"`
+				Status   string `json:"status"`
+				Metadata struct {
+					TelegramID string `json:"telegram_id"`
+				} `json:"metadata"`
+			} `json:"object"`
+		}
+
+		err := json.NewDecoder(r.Body).Decode(&payload)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		if payload.Event == "payment.succeeded" && payload.Object.Status == "succeeded" {
+			userID, err := strconv.ParseInt(payload.Object.Metadata.TelegramID, 10, 64)
+			if err == nil {
+				err = db.MakeUserPro(userID) // активируем или продлеваем подписку
+				if err != nil {
+					// лог ошибки
+				}
+			}
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func StartProExpiryChecker(db *database.DB, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		for range ticker.C {
+			err := db.RemoveExpiredProUsers()
+			if err != nil {
+				// лог ошибки
+			}
+		}
+	}()
 }

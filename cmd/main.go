@@ -5,6 +5,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
 	"net/http"
+	"time"
 	"twitchannouncer/internal/bot"
 	"twitchannouncer/internal/config"
 	"twitchannouncer/internal/database"
@@ -41,6 +42,8 @@ func main() {
 	log.Printf("Authorized on account %s", bot_.Self.UserName)
 
 	bot.StartBot(cfg, bot_, db)
+
+	bot.StartProExpiryChecker(db, 60*time.Minute)
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
