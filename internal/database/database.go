@@ -238,20 +238,6 @@ func (db *DB) GetStreamData(username string) (*StreamData, error) {
 	return &data, nil
 }
 
-func (db *DB) StoreMessageID(msgID int) error {
-	ctx := context.Background()
-
-	_, err := db.Pool.Exec(ctx, `
-		INSERT INTO subscriptions (latest_message) VALUES ($1)
-	`, msgID)
-
-	if err != nil {
-		return fmt.Errorf("ошибка вставки/обновления пользователя: %w", err)
-	}
-
-	return nil
-}
-
 func (db *DB) UpdateStreamStatus(username string, live bool, checked bool, latestMessageID int) error {
 	ctx := context.Background()
 	_, err := db.Pool.Exec(ctx, `
@@ -321,7 +307,6 @@ func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
 		}
 	}
 
-	// Обнуляем pro_expires_at для всех истекших
 	_, err = db.Pool.Exec(context.Background(), `
 		UPDATE users
 		SET expires_at = NULL
@@ -331,7 +316,6 @@ func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
 		return err
 	}
 
-	// Шлём сообщения
 	for _, userID := range expiredUserIDs {
 		msg := tgbotapi.NewMessage(userID, "❌ Ваша подписка Pro истекла.")
 		if _, err := bot.Send(msg); err != nil {
