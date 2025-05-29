@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5"
 	"log"
 	"time"
@@ -323,12 +324,42 @@ func (db *DB) IsUserPro(userID int64) (bool, error) {
 	return expiresAt != nil && expiresAt.After(time.Now()), nil
 }
 
-func (db *DB) RemoveExpiredProUsers() error {
-	_, err := db.Pool.Exec(context.Background(), `
+func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
+	rows, err := db.Pool.Query(context.Background(), `
+		SELECT telegram_id FROM users
+		WHERE expires_at IS NOT NULL AND expires_at <= NOW();
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var expiredUserIDs []int64
+
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err == nil {
+			expiredUserIDs = append(expiredUserIDs, userID)
+		}
+	}
+
+	// Обнуляем pro_expires_at для всех истекших
+	_, err = db.Pool.Exec(context.Background(), `
 		UPDATE users
 		SET expires_at = NULL
 		WHERE expires_at IS NOT NULL AND expires_at <= NOW();
 	`)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// Шлём сообщения
+	for _, userID := range expiredUserIDs {
+		msg := tgbotapi.NewMessage(userID, "❌ Ваша подписка Pro истекла.")
+		if _, err := bot.Send(msg); err != nil {
+			log.Printf("Не удалось отправить сообщение %d: %v", userID, err)
+		}
+	}
+
+	return nil
 }

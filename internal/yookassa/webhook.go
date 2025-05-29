@@ -32,8 +32,6 @@ func HandleWebhook(db *database.DB, bot *tgbotapi.BotAPI) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("Webhook body: %s", string(body))
-
 		var notif WebhookNotification
 		if err := json.Unmarshal(body, &notif); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
