@@ -47,8 +47,8 @@ func main() {
 
 	http.HandleFunc("/yookassa/webhook", yookassa.HandleWebhook(db, botAPI))
 
-	log.Println("Starting HTTP server on :8080")
-	err = http.ListenAndServe(":8080", nil)
+	log.Println("Starting HTTP server on :8443")
+	err = http.ListenAndServe(":8443", nil)
 	if err != nil {
 		log.Fatalf("HTTP server failed: %v", err)
 	}
