@@ -6,6 +6,8 @@ services:
       context: .
     container_name: twitchannouncer
     restart: always
+    ports:
+      - "8080:8080"  # Проброс порта для webhook
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     env_file:
