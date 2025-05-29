@@ -2,12 +2,12 @@ package yookassa
 
 import (
 	"encoding/json"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"twitchannouncer/internal/database"
 )
 
@@ -28,35 +28,47 @@ func HandleWebhook(db *database.DB, bot *tgbotapi.BotAPI) http.HandlerFunc {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "can't read body", http.StatusBadRequest)
+			log.Printf("Ошибка чтения тела запроса: %v", err)
 			return
 		}
+
+		log.Printf("Webhook body: %s", string(body))
 
 		var notif WebhookNotification
-		err = json.Unmarshal(body, &notif)
-		if err != nil {
+		if err := json.Unmarshal(body, &notif); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
+			log.Printf("Ошибка декодирования JSON: %v", err)
 			return
 		}
 
-		if notif.Event == "payment.succeeded" {
-			tgID, err := strconv.ParseInt(notif.Object.Metadata.TelegramID, 10, 64)
+		tgIDStr := notif.Object.Metadata.TelegramID
+		if tgIDStr == "" {
+			log.Println("Отсутствует telegram_id в metadata")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		tgID, err := strconv.ParseInt(tgIDStr, 10, 64)
+		if err != nil {
+			log.Printf("Неверный telegram_id: %v", err)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		switch notif.Event {
+		case "payment.succeeded", "payment.waiting_for_capture":
+			err := db.MakeUserPro(tgID)
 			if err != nil {
-				log.Printf("Неверный telegram_id: %v", err)
-				return
+				log.Printf("Ошибка при установке Pro-подписки для %d: %v", tgID, err)
+			} else {
+				msg := tgbotapi.NewMessage(tgID, "✅ Ваша подписка Pro активирована! Спасибо за поддержку!")
+				if _, err := bot.Send(msg); err != nil {
+					log.Printf("Не удалось отправить сообщение пользователю %d: %v", tgID, err)
+				}
+				log.Printf("Pro активирована для пользователя %d", tgID)
 			}
-
-			err = db.MakeUserPro(tgID)
-			if err != nil {
-				log.Printf("Ошибка активации Pro: %v", err)
-				return
-			}
-
-			msg := tgbotapi.NewMessage(tgID, "✅ Ваша подписка Pro активирована! Спасибо.")
-			if _, err := bot.Send(msg); err != nil {
-				log.Printf("Ошибка отправки сообщения: %v", err)
-			}
-
-			log.Printf("Пользователь %d успешно активировал Pro", tgID)
+		default:
+			log.Printf("Необработанное событие: %s", notif.Event)
 		}
 
 		w.WriteHeader(http.StatusOK)
