@@ -278,3 +278,20 @@ func (db *DB) UpdateStreamStatus(username string, live bool, checked bool, lates
 	`, live, checked, latestMessageID, username)
 	return err
 }
+
+func (db *DB) SetProStatus(userID int64, isPro bool) error {
+	ctx := context.Background()
+	_, err := db.Pool.Exec(ctx, `
+		UPDATE users
+		SET pro = $1
+		WHERE telegram_id = $2
+	`, isPro, userID)
+	if err != nil {
+		return fmt.Errorf("ошибка установки pro-статуса: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) RemoveProStatus(userID int64) error {
+	return db.SetProStatus(userID, false)
+}
