@@ -2,12 +2,16 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const proDuration = 30 * 24 * time.Hour
 
 type DB struct {
 	Pool *pgxpool.Pool
@@ -279,19 +283,37 @@ func (db *DB) UpdateStreamStatus(username string, live bool, checked bool, lates
 	return err
 }
 
-func (db *DB) SetProStatus(userID int64, isPro bool) error {
-	ctx := context.Background()
-	_, err := db.Pool.Exec(ctx, `
-		UPDATE users
-		SET pro = $1
-		WHERE telegram_id = $2
-	`, isPro, userID)
-	if err != nil {
-		return fmt.Errorf("ошибка установки pro-статуса: %w", err)
-	}
-	return nil
+func (db *DB) MakeUserPro(userID int64) error {
+	expiry := time.Now().Add(proDuration)
+	_, err := db.Pool.Exec(context.Background(), `
+		INSERT INTO pro_users (telegram_id, activated_at, expires_at)
+		VALUES ($1, NOW(), $2)
+		ON CONFLICT (telegram_id) DO UPDATE
+		SET activated_at = NOW(), expires_at = EXCLUDED.expires_at
+	`, userID, expiry)
+	return err
 }
 
-func (db *DB) RemoveProStatus(userID int64) error {
-	return db.SetProStatus(userID, false)
+func (db *DB) RemoveUserPro(userID int64) error {
+	_, err := db.Pool.Exec(context.Background(), `DELETE FROM pro_users WHERE telegram_id = $1`, userID)
+	return err
+}
+
+func (db *DB) IsUserPro(userID int64) (bool, error) {
+	var expiresAt time.Time
+	err := db.Pool.QueryRow(context.Background(), `
+		SELECT expires_at FROM pro_users WHERE telegram_id = $1
+	`, userID).Scan(&expiresAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return expiresAt.After(time.Now()), nil
+}
+
+func (db *DB) RemoveExpiredProUsers() error {
+	_, err := db.Pool.Exec(context.Background(), `DELETE FROM pro_users WHERE expires_at <= NOW()`)
+	return err
 }
