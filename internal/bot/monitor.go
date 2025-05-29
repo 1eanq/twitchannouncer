@@ -97,9 +97,9 @@ func (m *Monitor) checkAllStreams() {
 				go func(chID int64) {
 					defer wg.Done()
 					msg := tgbotapi.NewMessage(chID, fmt.Sprintf(
-						"🔴 \\*%s\\* начал стрим\\!\n📝 \\*Название:\\* %s\n🎮 \\*Игра\\:\\* %s\n👉 https\\://twitch\\.tv/%s",
+						"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
 						username, info.Title, info.GameName, username))
-					msg.ParseMode = "MarkdownV2"
+					msg.ParseMode = "Markdown"
 
 					sentMsg, err := m.bot.Send(msg)
 					if err != nil {
@@ -121,9 +121,9 @@ func (m *Monitor) checkAllStreams() {
 				go func(chID int64) {
 					defer wg.Done()
 					msg := tgbotapi.NewMessage(chID, fmt.Sprintf(
-						"🔴 \\*%s\\* начал стрим\\!\n📝 \\*Название:\\* %s\n🎮 \\*Игра\\:\\* %s\n👉 https\\://twitch\\.tv/%s\n\nОтправлено с помощью \\[Twitchmanannouncer_bot\\]\\(https\\://t\\.me/Twitchmanannouncer\\_bot\\)",
+						"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
 						username, info.Title, info.GameName, username))
-					msg.ParseMode = "MarkdownV2"
+					msg.ParseMode = "Markdown"
 
 					sentMsg, err := m.bot.Send(msg)
 					if err != nil {
