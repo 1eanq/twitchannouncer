@@ -4,7 +4,6 @@ import (
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
-	"net/http"
 	"time"
 	"twitchannouncer/internal/bot"
 	"twitchannouncer/internal/config"
@@ -44,14 +43,4 @@ func main() {
 	bot.StartBot(cfg, bot_, db)
 
 	bot.StartProExpiryChecker(db, 60*time.Minute)
-
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Write([]byte("Bot is running"))
-	})
-
-	log.Println("HTTP-сервер слушает на порту 8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatalf("ошибка запуска сервера: %v", err)
-	}
 }
