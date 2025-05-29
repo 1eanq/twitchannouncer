@@ -8,6 +8,8 @@ services:
     restart: always
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
     logging:
       driver: "json-file"
       options:
