@@ -18,6 +18,6 @@ RUN apk add --no-cache postgresql-client ca-certificates
 COPY --from=builder /app/bot .
 COPY --from=builder /app/config.yaml .
 
-EXPOSE 8081
+EXPOSE 8443
 
 CMD ["./bot"]
