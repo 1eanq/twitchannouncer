@@ -14,13 +14,14 @@ import (
 )
 
 var userState = make(map[int64]string)
-var deleteTemp = make(map[int64]database.UserData)
-var data database.UserData
+var deleteTemp = make(map[int64]database.SubscriptionData)
+var userData database.UserData
+var subscriptionData database.SubscriptionData
 
 func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 	ctx := context.Background()
 	monitor := NewMonitor(bot, db, cfg)
-	go monitor.Start(ctx, 5*time.Second)
+	go monitor.Start(ctx, 60*time.Second)
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -61,18 +62,18 @@ func handleCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update
 		bot.Send(tgbotapi.NewMessage(chatID, "Вас приветствует бот для автоматической отправки уведомлений о стримах.\n/help для просмотра доступных комманд!"))
 	case "help":
 		helpText := `📌 *Команды бота:*
-/help — Показать справку
-/new — ➕ Добавить Twitch-подписку
-/list — 📋 Посмотреть ваши подписки
-/delete — ❌ Удалить подписку по нику и ID`
+			/help — Показать справку
+			/new — ➕ Добавить Twitch-подписку
+			/list — 📋 Посмотреть ваши подписки
+			/delete — ❌ Удалить подписку по нику и ID`
 		msg := tgbotapi.NewMessage(chatID, helpText)
 		msg.ParseMode = "Markdown"
 		bot.Send(msg)
 	case "new":
 		bot.Send(tgbotapi.NewMessage(chatID, "Напиши Twitch username:"))
 		userState[chatID] = "awaiting_username"
-		data.TelegramID = update.Message.From.ID
-		data.TelegramUsername = update.Message.From.UserName
+		userData.TelegramID = update.Message.From.ID
+		userData.TelegramUsername = update.Message.From.UserName
 	case "list":
 		handleListCommand(bot, db, update)
 	case "delete":
@@ -110,7 +111,7 @@ func handleListCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Up
 
 func handleAwaitingUsername(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
-	data.TwitchUsername = strings.ToLower(strings.TrimSpace(update.Message.Text))
+	subscriptionData.TwitchUsername = strings.ToLower(strings.TrimSpace(update.Message.Text))
 	bot.Send(tgbotapi.NewMessage(chatID, "Перешлите сообщение из канала\nКанал должен быть открытым!"))
 	userState[chatID] = "awaiting_channel"
 }
@@ -118,11 +119,11 @@ func handleAwaitingUsername(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
 	if update.Message.ForwardFromChat != nil && update.Message.ForwardFromChat.Type == "channel" {
-		data.ChannelID = update.Message.ForwardFromChat.ID
-		data.ChannelName = update.Message.ForwardFromChat.UserName
+		subscriptionData.ChannelID = update.Message.ForwardFromChat.ID
+		subscriptionData.ChannelName = update.Message.ForwardFromChat.UserName
 		userState[chatID] = ""
 
-		err := db.StoreData(data)
+		err := db.StoreData(userData, subscriptionData)
 		if err != nil {
 			if strings.Contains(err.Error(), "уже существует") {
 				bot.Send(tgbotapi.NewMessage(chatID, "Такая подписка уже существует!"))
@@ -133,7 +134,7 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 		}
 
 		bot.Send(tgbotapi.NewMessage(chatID,
-			fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", data.TwitchUsername, data.ChannelName)))
+			fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName)))
 	} else {
 		bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, чтобы я мог получить его ID."))
 	}
@@ -141,10 +142,8 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 
 func handleAwaitingDeleteUsername(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
-	deleteTemp[chatID] = database.UserData{
-		TelegramID:       update.Message.From.ID,
-		TelegramUsername: update.Message.From.UserName,
-		TwitchUsername:   strings.ToLower(strings.TrimSpace(update.Message.Text)),
+	deleteTemp[chatID] = database.SubscriptionData{
+		TwitchUsername: strings.ToLower(strings.TrimSpace(update.Message.Text)),
 	}
 	bot.Send(tgbotapi.NewMessage(chatID, "Теперь перешлите сообщение из канала, связанного с этим юзернеймом:"))
 	userState[chatID] = "awaiting_delete_channel"

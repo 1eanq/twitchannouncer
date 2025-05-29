@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
 	"twitchannouncer/internal/config"
@@ -43,7 +42,7 @@ func (m *Monitor) Start(ctx context.Context, duration time.Duration) {
 		for {
 			select {
 			case <-ticker.C:
-				m.checkAllStreams()
+				m.Monitoring()
 			case <-ctx.Done():
 				return
 			}
@@ -51,108 +50,66 @@ func (m *Monitor) Start(ctx context.Context, duration time.Duration) {
 	}()
 }
 
-func (m *Monitor) checkAllStreams() {
-	usernames, err := m.db.GetAllTwitchUsernames()
+func (m *Monitor) Monitoring() {
+	subs, err := m.db.GetAllSubscriptions()
 	if err != nil {
-		log.Printf("Ошибка при получении твич-юзеров: %v", err)
-		return
+		log.Println(err)
 	}
 
-	for _, username := range usernames {
-		isLive, info := m.checkStreamStatus(username)
+	for _, sub := range subs {
+		isLive, info := m.checkStreamStatus(sub.TwitchUsername)
 
-		streamData, err := m.db.GetStreamData(username)
+		streamData, err := m.db.GetStreamData(sub.TwitchUsername)
 		if err != nil {
-			log.Printf("Ошибка получения данных о стриме для %s: %v", username, err)
-			continue
-		}
-
-		channels, err := m.db.GetAllChannelsForUser(username)
-		if err != nil {
-			log.Printf("Ошибка при получении каналов для %s: %v", username, err)
-			continue
+			log.Printf("Ошибка при получении твич-юзеров: %v", err)
+			return
 		}
 
 		if isLive && (!streamData.Checked || !streamData.Live) {
-			proChannels := []int64{}
-			regularChannels := []int64{}
+			isPro, err := m.db.IsUserPro(sub.UserID)
+			if err != nil {
+				log.Println(err)
+			}
+			if isPro {
+				msg := tgbotapi.NewMessage(sub.ChannelID, fmt.Sprintf(
+					"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
+					sub.TwitchUsername, info.Title, info.GameName, sub.TwitchUsername))
+				msg.ParseMode = "Markdown"
 
-			for _, chID := range channels {
-				isPro, err := m.db.IsUserPro(chID)
+				sentMsg, err := m.bot.Send(msg)
 				if err != nil {
-					log.Printf("Ошибка проверки Pro статуса для %d: %v", chID, err)
-					continue
+					log.Printf("Ошибка отправки Pro-сообщения: %v", err)
+					return
 				}
-				if isPro {
-					proChannels = append(proChannels, chID)
-				} else {
-					regularChannels = append(regularChannels, chID)
+
+				err = m.db.UpdateStreamStatus(sub.TwitchUsername, true, true, sentMsg.MessageID)
+				if err != nil {
+					log.Printf("Ошибка обновления статуса стрима: %v", err)
+				}
+			} else {
+				msg := tgbotapi.NewMessage(sub.ChannelID, fmt.Sprintf(
+					"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
+					sub.TwitchUsername, info.Title, info.GameName, sub.TwitchUsername))
+				msg.ParseMode = "Markdown"
+
+				sentMsg, err := m.bot.Send(msg)
+				if err != nil {
+					log.Printf("Ошибка отправки обычного сообщения: %v", err)
+					return
+				}
+
+				err = m.db.UpdateStreamStatus(sub.TwitchUsername, true, true, sentMsg.MessageID)
+				if err != nil {
+					log.Printf("Ошибка обновления статуса стрима: %v", err)
 				}
 			}
-
-			var wg sync.WaitGroup
-
-			for _, chID := range proChannels {
-				wg.Add(1)
-				go func(chID int64) {
-					defer wg.Done()
-					msg := tgbotapi.NewMessage(chID, fmt.Sprintf(
-						"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
-						username, info.Title, info.GameName, username))
-					msg.ParseMode = "Markdown"
-
-					sentMsg, err := m.bot.Send(msg)
-					if err != nil {
-						log.Printf("Ошибка отправки Pro-сообщения: %v", err)
-						return
-					}
-
-					err = m.db.UpdateStreamStatus(username, true, true, sentMsg.MessageID)
-					if err != nil {
-						log.Printf("Ошибка обновления статуса стрима: %v", err)
-					}
-				}(chID)
-			}
-
-			wg.Wait()
-
-			for _, chID := range regularChannels {
-				wg.Add(1)
-				go func(chID int64) {
-					defer wg.Done()
-					msg := tgbotapi.NewMessage(chID, fmt.Sprintf(
-						"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
-						username, info.Title, info.GameName, username))
-					msg.ParseMode = "Markdown"
-
-					sentMsg, err := m.bot.Send(msg)
-					if err != nil {
-						log.Printf("Ошибка отправки обычного сообщения: %v", err)
-						return
-					}
-
-					err = m.db.UpdateStreamStatus(username, true, true, sentMsg.MessageID)
-					if err != nil {
-						log.Printf("Ошибка обновления статуса стрима: %v", err)
-					}
-				}(chID)
-			}
-
-			wg.Wait()
 		}
 
 		if !isLive && streamData.Checked && streamData.Live {
-			for _, chID := range channels {
-				del := tgbotapi.NewDeleteMessage(chID, streamData.LatestMessageID)
-				_, err := m.bot.Request(del)
-				if err != nil {
-					log.Printf("Ошибка при удалении сообщения: %v", err)
-				}
-			}
-
-			err = m.db.UpdateStreamStatus(username, false, true, 0)
+			del := tgbotapi.NewDeleteMessage(sub.ChannelID, sub.LatestMessageID)
+			_, err := m.bot.Request(del)
 			if err != nil {
-				log.Printf("Ошибка обновления статуса стрима: %v", err)
+				log.Printf("Ошибка при удалении сообщения: %v", err)
 			}
 		}
 	}
