@@ -92,7 +92,6 @@ func (m *Monitor) checkAllStreams() {
 
 			var wg sync.WaitGroup
 
-			// Сначала Pro
 			for _, chID := range proChannels {
 				wg.Add(1)
 				go func(chID int64) {
@@ -100,7 +99,7 @@ func (m *Monitor) checkAllStreams() {
 					msg := tgbotapi.NewMessage(chID, fmt.Sprintf(
 						"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
 						username, info.Title, info.GameName, username))
-					msg.ParseMode = "Markdown"
+					msg.ParseMode = "MarkdownV2"
 
 					sentMsg, err := m.bot.Send(msg)
 					if err != nil {
@@ -117,15 +116,14 @@ func (m *Monitor) checkAllStreams() {
 
 			wg.Wait()
 
-			// Потом обычные
 			for _, chID := range regularChannels {
 				wg.Add(1)
 				go func(chID int64) {
 					defer wg.Done()
 					msg := tgbotapi.NewMessage(chID, fmt.Sprintf(
-						"*🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
+						"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
 						username, info.Title, info.GameName, username))
-					msg.ParseMode = "Markdown"
+					msg.ParseMode = "MarkdownV2"
 
 					sentMsg, err := m.bot.Send(msg)
 					if err != nil {
