@@ -2,10 +2,8 @@ package bot
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"strconv"
+	"log"
 	"strings"
 	"time"
 	"twitchannouncer/internal/config"
@@ -180,56 +178,26 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 
 	isPro, err := db.IsUserPro(userID)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при проверке статуса. Попробуйте позже."))
+		log.Printf("DB error: %v", err)
+		bot.Send(tgbotapi.NewMessage(chatID, "❗ Ошибка при проверке статуса. Попробуйте позже."))
 		return
 	}
 
 	if isPro {
-		bot.Send(tgbotapi.NewMessage(chatID, "У вас уже активна подписка Pro. Спасибо!"))
+		bot.Send(tgbotapi.NewMessage(chatID, "✅ У вас уже активна подписка Pro. Спасибо!"))
 		return
 	}
 
-	payURL, err := yookassa.CreateYooKassaPayment(userID)
+	client := yookassa.NewClient()
+	payURL, err := client.CreatePayment(userID)
 	if err != nil {
-		bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при создании платежа. Попробуйте позже."))
+		log.Printf("YooKassa error (user %d): %v", userID, err)
+		bot.Send(tgbotapi.NewMessage(chatID, "❗ Ошибка при создании платежа. Попробуйте позже."))
 		return
 	}
 
-	msg := fmt.Sprintf("Для активации подписки Pro перейдите по ссылке и оплатите:\n%s", payURL)
+	msg := fmt.Sprintf("💳 Для активации подписки Pro перейдите по ссылке и оплатите:\n%s", payURL)
 	bot.Send(tgbotapi.NewMessage(chatID, msg))
-}
-
-func YooKassaWebhookHandler(db *database.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var payload struct {
-			Event  string `json:"event"`
-			Object struct {
-				ID       string `json:"id"`
-				Status   string `json:"status"`
-				Metadata struct {
-					TelegramID string `json:"telegram_id"`
-				} `json:"metadata"`
-			} `json:"object"`
-		}
-
-		err := json.NewDecoder(r.Body).Decode(&payload)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		if payload.Event == "payment.succeeded" && payload.Object.Status == "succeeded" {
-			userID, err := strconv.ParseInt(payload.Object.Metadata.TelegramID, 10, 64)
-			if err == nil {
-				err = db.MakeUserPro(userID) // активируем или продлеваем подписку
-				if err != nil {
-					// лог ошибки
-				}
-			}
-		}
-
-		w.WriteHeader(http.StatusOK)
-	}
 }
 
 func StartProExpiryChecker(db *database.DB, interval time.Duration) {

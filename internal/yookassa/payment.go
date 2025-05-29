@@ -1,12 +1,9 @@
 package yookassa
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
-	"time"
+	"io"
 )
 
 type YooKassaPaymentRequest struct {
@@ -31,7 +28,7 @@ type YooKassaPaymentResponse struct {
 	} `json:"confirmation"`
 }
 
-func CreateYooKassaPayment(telegramID int64) (string, error) {
+func (c *Client) CreatePayment(telegramID int64) (string, error) {
 	reqBody := YooKassaPaymentRequest{}
 	reqBody.Amount.Value = "50.00"
 	reqBody.Amount.Currency = "RUB"
@@ -41,17 +38,22 @@ func CreateYooKassaPayment(telegramID int64) (string, error) {
 	reqBody.Metadata = map[string]string{"telegram_id": fmt.Sprintf("%d", telegramID)}
 
 	jsonData, _ := json.Marshal(reqBody)
+	req, err := c.NewRequest("POST", "https://api.yookassa.ru/v3/payments", jsonData)
+	if err != nil {
+		return "", err
+	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest("POST", "https://api.yookassa.ru/v3/payments", bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic "+os.Getenv("YOOKASSA_AUTH")) // базовая авторизация (shopId:secret) в base64
-
-	resp, err := client.Do(req)
+	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	// обработка ошибок от ЮKassa
+	if resp.StatusCode >= 400 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ошибка от YooKassa [%d]: %s", resp.StatusCode, string(bodyBytes))
+	}
 
 	var respData YooKassaPaymentResponse
 	err = json.NewDecoder(resp.Body).Decode(&respData)
