@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/joho/godotenv"
 	"log"
 	"time"
 	"twitchannouncer/internal/bot"
@@ -12,13 +11,8 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Ошибка загрузки .env файла")
-	}
-
 	cfg := config.LoadConfig("config.yaml")
-	err = config.RefreshTwitchToken(&cfg, "config.yaml")
+	err := config.RefreshTwitchToken(&cfg, "config.yaml")
 	if err != nil {
 		log.Fatalf("Ошибка обновления Twitch токена: %v", err)
 	}
