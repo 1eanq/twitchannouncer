@@ -4,10 +4,12 @@ import (
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
+	"net/http"
 	"time"
 	"twitchannouncer/internal/bot"
 	"twitchannouncer/internal/config"
 	"twitchannouncer/internal/database"
+	"twitchannouncer/internal/yookassa"
 )
 
 func main() {
@@ -32,15 +34,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	bot_, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
+	botAPI, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	bot_.Debug = true
-	log.Printf("Authorized on account %s", bot_.Self.UserName)
+	botAPI.Debug = true
+	log.Printf("Authorized on account %s", botAPI.Self.UserName)
 
-	bot.StartBot(cfg, bot_, db)
+	go bot.StartBot(cfg, botAPI, db)
+	go bot.StartProExpiryChecker(db, 60*time.Minute)
 
-	bot.StartProExpiryChecker(db, 60*time.Minute)
+	http.HandleFunc("/yookassa/webhook", yookassa.HandleWebhook(db, botAPI))
+
+	log.Println("Starting HTTP server on :8080")
+	err = http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatalf("HTTP server failed: %v", err)
+	}
 }

@@ -13,9 +13,11 @@ FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk add --no-cache postgresql-client
+RUN apk add --no-cache postgresql-client ca-certificates
 
 COPY --from=builder /app/bot .
 COPY --from=builder /app/config.yaml .
+
+EXPOSE 8080
 
 CMD ["./bot"]
