@@ -43,7 +43,7 @@ func main() {
 	log.Printf("Authorized on account %s", botAPI.Self.UserName)
 
 	go bot.StartBot(cfg, botAPI, db)
-	go bot.StartProExpiryChecker(db, 60*time.Minute)
+	go bot.StartProExpiryChecker(botAPI, db, 60*time.Minute)
 
 	http.HandleFunc("/yookassa/webhook", yookassa.HandleWebhook(db, botAPI))
 
