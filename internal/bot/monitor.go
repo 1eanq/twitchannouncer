@@ -25,7 +25,6 @@ type StreamInfo struct {
 	GameName    string
 }
 
-// NewMonitor создает новый мониторинг
 func NewMonitor(bot *tgbotapi.BotAPI, db *database.DB, cfg config.Config) *Monitor {
 	return &Monitor{
 		bot: bot,
@@ -48,7 +47,6 @@ func (m *Monitor) Start(ctx context.Context, duration time.Duration) {
 	}()
 }
 
-// checkAllStreams проверяет статус всех стримов
 func (m *Monitor) checkAllStreams() {
 	usernames, err := m.db.GetAllTwitchUsernames()
 	if err != nil {
@@ -59,7 +57,6 @@ func (m *Monitor) checkAllStreams() {
 	for _, username := range usernames {
 		isLive, info := m.checkStreamStatus(username)
 
-		// Получаем текущее состояние из базы
 		streamData, err := m.db.GetStreamData(username)
 		if err != nil {
 			log.Printf("Ошибка получения данных о стриме для %s: %v", username, err)
@@ -72,7 +69,6 @@ func (m *Monitor) checkAllStreams() {
 			continue
 		}
 
-		// Стрим начался
 		if isLive && (!streamData.Checked || !streamData.Live) {
 			messageText := fmt.Sprintf(
 				"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
@@ -88,7 +84,6 @@ func (m *Monitor) checkAllStreams() {
 					continue
 				}
 
-				// Обновляем статус в базе
 				err = m.db.UpdateStreamStatus(username, true, true, sentMsg.MessageID)
 				if err != nil {
 					log.Printf("Ошибка обновления статуса стрима: %v", err)
@@ -96,7 +91,6 @@ func (m *Monitor) checkAllStreams() {
 			}
 		}
 
-		// Стрим закончился
 		if !isLive && streamData.Checked && streamData.Live {
 			for _, chID := range channels {
 				del := tgbotapi.NewDeleteMessage(chID, streamData.LatestMessageID)
@@ -106,7 +100,6 @@ func (m *Monitor) checkAllStreams() {
 				}
 			}
 
-			// Сброс статуса в базе
 			err = m.db.UpdateStreamStatus(username, false, true, 0)
 			if err != nil {
 				log.Printf("Ошибка обновления статуса стрима: %v", err)
@@ -115,7 +108,6 @@ func (m *Monitor) checkAllStreams() {
 	}
 }
 
-// checkStreamStatus проверяет статус стрима для одного пользователя
 func (m *Monitor) checkStreamStatus(username string) (bool, StreamInfo) {
 	url := fmt.Sprintf("https://api.twitch.tv/helix/streams?user_login=%s", username)
 	req, _ := http.NewRequest("GET", url, nil)
