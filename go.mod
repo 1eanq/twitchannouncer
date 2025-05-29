@@ -9,6 +9,7 @@ require github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/jackc/pgx/v5 v5.7.4
+	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )
