@@ -1,17 +1,20 @@
 package database
 
+import "time"
+
 type UserData struct {
 	TelegramID       int64
 	TelegramUsername string
-	TwitchUsername   string
-	ChannelID        int64
-	ChannelName      string
+	Admin            bool
+	expires_at       time.Time
 }
 
-type StreamData struct {
+type SubscriptionData struct {
 	UserID          int64
+	ChannelID       int64
 	TwitchUsername  string
-	Live            bool
-	Checked         bool
 	LatestMessageID int
+	Checked         bool
+	Live            bool
+	ChannelName     string
 }
