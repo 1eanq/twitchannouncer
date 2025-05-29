@@ -25,11 +25,13 @@ type WebhookNotification struct {
 
 func HandleWebhook(db *database.DB, bot *tgbotapi.BotAPI) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("➡️ Получен запрос от YooKassa на вебхук")
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "can't read body", http.StatusBadRequest)
 			return
 		}
+		log.Printf("Webhook body: %s", string(body))
 
 		var notif WebhookNotification
 		err = json.Unmarshal(body, &notif)
