@@ -285,35 +285,50 @@ func (db *DB) UpdateStreamStatus(username string, live bool, checked bool, lates
 
 func (db *DB) MakeUserPro(userID int64) error {
 	expiry := time.Now().Add(proDuration)
+
 	_, err := db.Pool.Exec(context.Background(), `
-		INSERT INTO pro_users (telegram_id, activated_at, expires_at)
-		VALUES ($1, NOW(), $2)
+		INSERT INTO users (telegram_id, expires_at)
+		VALUES ($1, $2)
 		ON CONFLICT (telegram_id) DO UPDATE
-		SET activated_at = NOW(), expires_at = EXCLUDED.expires_at
+		SET expires_at = EXCLUDED.expires_at;
 	`, userID, expiry)
+
 	return err
 }
 
 func (db *DB) RemoveUserPro(userID int64) error {
-	_, err := db.Pool.Exec(context.Background(), `DELETE FROM pro_users WHERE telegram_id = $1`, userID)
+	_, err := db.Pool.Exec(context.Background(), `
+		UPDATE users
+		SET expires_at = NULL
+		WHERE telegram_id = $1;
+	`, userID)
+
 	return err
 }
 
 func (db *DB) IsUserPro(userID int64) (bool, error) {
-	var expiresAt time.Time
+	var expiresAt *time.Time
+
 	err := db.Pool.QueryRow(context.Background(), `
-		SELECT expires_at FROM pro_users WHERE telegram_id = $1
+		SELECT expires_at FROM users WHERE telegram_id = $1;
 	`, userID).Scan(&expiresAt)
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
 	}
-	return expiresAt.After(time.Now()), nil
+
+	return expiresAt != nil && expiresAt.After(time.Now()), nil
 }
 
 func (db *DB) RemoveExpiredProUsers() error {
-	_, err := db.Pool.Exec(context.Background(), `DELETE FROM pro_users WHERE expires_at <= NOW()`)
+	_, err := db.Pool.Exec(context.Background(), `
+		UPDATE users
+		SET expires_at = NULL
+		WHERE expires_at IS NOT NULL AND expires_at <= NOW();
+	`)
+
 	return err
 }
