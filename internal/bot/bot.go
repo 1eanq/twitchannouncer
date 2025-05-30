@@ -21,7 +21,7 @@ var subscriptionData database.SubscriptionData
 func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 	ctx := context.Background()
 	monitor := NewMonitor(bot, db, cfg)
-	go monitor.Start(ctx, 60*time.Second)
+	go monitor.Start(ctx, 10*time.Second)
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -133,6 +133,7 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 			}
 			return
 		}
+		log.Printf("Новая подписка добавлена. %s", fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName))
 
 		bot.Send(tgbotapi.NewMessage(chatID,
 			fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName)))

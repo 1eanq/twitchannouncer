@@ -39,7 +39,6 @@ func main() {
 		log.Panic(err)
 	}
 
-	botAPI.Debug = true
 	log.Printf("Authorized on account %s", botAPI.Self.UserName)
 
 	go bot.StartBot(cfg, botAPI, db)
