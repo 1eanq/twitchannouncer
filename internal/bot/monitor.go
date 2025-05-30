@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"twitchannouncer/internal/config"
@@ -71,32 +72,46 @@ func (m *Monitor) Monitoring() {
 				log.Println(err)
 			}
 			if isPro {
-				msg := tgbotapi.NewMessage(sub.ChannelID, fmt.Sprintf(
+				text := fmt.Sprintf(
 					"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s",
-					sub.TwitchUsername, info.Title, info.GameName, sub.TwitchUsername))
-				msg.ParseMode = "Markdown"
+					escapeMarkdown(sub.TwitchUsername),
+					escapeMarkdown(info.Title),
+					escapeMarkdown(info.GameName),
+					escapeMarkdown(sub.TwitchUsername),
+				)
+
+				msg := tgbotapi.NewMessage(sub.ChannelID, text)
+				msg.ParseMode = "MarkdownV2"
 
 				sentMsg, err := m.bot.Send(msg)
 				if err != nil {
-					log.Printf("Ошибка отправки Pro-сообщения: %v", err)
-					return
+					log.Printf("Ошибка отправки сообщения: %v", err)
+					continue
 				}
+				log.Printf("Сообщение успешно отправлено. %s", sentMsg.Text)
 
 				err = m.db.UpdateStreamStatus(sub.TwitchUsername, true, true, sentMsg.MessageID)
 				if err != nil {
 					log.Printf("Ошибка обновления статуса стрима: %v", err)
 				}
 			} else {
-				msg := tgbotapi.NewMessage(sub.ChannelID, fmt.Sprintf(
-					"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью [Twitchmanannouncer_bot](https://t.me/Twitchmanannouncer_bot)",
-					sub.TwitchUsername, info.Title, info.GameName, sub.TwitchUsername))
-				msg.ParseMode = "Markdown"
+				text := fmt.Sprintf(
+					"🔴 *%s* начал стрим!\n📝 *Название:* %s\n🎮 *Игра:* %s\n👉 https://twitch.tv/%s\n\nОтправлено с помощью https://t.me/Twitchmanannouncer_bot",
+					sub.TwitchUsername,
+					info.Title,
+					info.GameName,
+					sub.TwitchUsername,
+				)
+
+				msg := tgbotapi.NewMessage(sub.ChannelID, escapeMarkdown(text))
+				msg.ParseMode = "MarkdownV2"
 
 				sentMsg, err := m.bot.Send(msg)
 				if err != nil {
-					log.Printf("Ошибка отправки обычного сообщения: %v", err)
-					return
+					log.Printf("Ошибка отправки сообщения: %v", err)
+					continue
 				}
+				log.Printf("Сообщение успешно отправлено. %s", sentMsg.Text)
 
 				err = m.db.UpdateStreamStatus(sub.TwitchUsername, true, true, sentMsg.MessageID)
 				if err != nil {
@@ -111,6 +126,8 @@ func (m *Monitor) Monitoring() {
 			if err != nil {
 				log.Printf("Ошибка при удалении сообщения: %v", err)
 			}
+			err = m.db.UpdateStreamStatus(sub.TwitchUsername, false, false, 0)
+
 		}
 	}
 }
@@ -152,4 +169,27 @@ func (m *Monitor) checkStreamStatus(username string) (bool, StreamInfo) {
 		ViewerCount: stream.ViewerCount,
 		GameName:    stream.GameName,
 	}
+}
+
+func escapeMarkdown(text string) string {
+	replacer := strings.NewReplacer(
+		`_`, `\_`,
+		`[`, `\[`,
+		`]`, `\]`,
+		`(`, `\(`,
+		`)`, `\)`,
+		`~`, `\~`,
+		"`", "\\`",
+		`>`, `\>`,
+		`#`, `\#`,
+		`+`, `\+`,
+		`-`, `\-`,
+		`=`, `\=`,
+		`|`, `\|`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`.`, `\.`,
+		`!`, `\!`,
+	)
+	return replacer.Replace(text)
 }
