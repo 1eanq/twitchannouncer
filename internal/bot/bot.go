@@ -242,7 +242,13 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	chatID := update.Message.Chat.ID
 	userID := update.Message.From.ID
 
-	isPro, err := db.IsUserPro(userID)
+	description := `🌟 *Подписка Pro* даёт вам:
+- 🔔 Уведомления без ограничений
+- 📈 Приоритетную обработку запросов
+- 🚫 Отключение всей рекламы
+Стоимость — всего *50₽ в месяц*`
+
+	isPro, expiry, err := db.IsUserPro(userID)
 	if err != nil {
 		log.Printf("DB error: %v", err)
 		bot.Send(tgbotapi.NewMessage(chatID, "❗ Ошибка при проверке статуса. Попробуйте позже."))
@@ -250,7 +256,10 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	}
 
 	if isPro {
-		bot.Send(tgbotapi.NewMessage(chatID, "✅ У вас уже активна подписка Pro. Спасибо!"))
+		text := fmt.Sprintf("%s\n\n✅ У вас уже активна подписка *Pro* до *%s*.", description, expiry.Format("02.01.2006"))
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ParseMode = "Markdown"
+		bot.Send(msg)
 		return
 	}
 
@@ -263,8 +272,7 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	}
 
 	amount := "50₽"
-
-	msgText := fmt.Sprintf("💳 Для активации подписки Pro нажмите кнопку ниже и оплатите %s:", amount)
+	msgText := fmt.Sprintf("%s\n\n💳 Нажмите кнопку ниже, чтобы оплатить *%s* и активировать подписку:", description, amount)
 
 	button := tgbotapi.NewInlineKeyboardButtonURL("Оплатить "+amount, payURL)
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -272,6 +280,7 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	)
 
 	msg := tgbotapi.NewMessage(chatID, msgText)
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = keyboard
 
 	bot.Send(msg)
