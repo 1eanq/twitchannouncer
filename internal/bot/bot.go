@@ -123,6 +123,7 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 		subscriptionData.ChannelName = update.Message.ForwardFromChat.UserName
 		userState[chatID] = ""
 
+		subscriptionData.UserID = userData.TelegramID
 		err := db.StoreData(userData, subscriptionData)
 		if err != nil {
 			if strings.Contains(err.Error(), "уже существует") {
