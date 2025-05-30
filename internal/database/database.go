@@ -276,21 +276,22 @@ func (db *DB) RemoveUserPro(userID int64) error {
 	return err
 }
 
-func (db *DB) IsUserPro(userID int64) (bool, error) {
-	var expiresAt *time.Time
-
-	err := db.Pool.QueryRow(context.Background(), `
-		SELECT expires_at FROM users WHERE telegram_id = $1;
-	`, userID).Scan(&expiresAt)
+func (db *DB) IsUserPro(userID int64) (bool, time.Time, error) {
+	ctx := context.Background()
+	var expiry time.Time
+	err := db.Pool.QueryRow(ctx, `
+		SELECT expires_at FROM users
+		WHERE telegram_id = $1 AND users.expires_at > NOW()
+	`, userID).Scan(&expiry)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
+			return false, time.Time{}, nil
 		}
-		return false, err
+		return false, time.Time{}, err
 	}
 
-	return expiresAt != nil && expiresAt.After(time.Now()), nil
+	return true, expiry, nil
 }
 
 func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {

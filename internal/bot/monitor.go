@@ -67,7 +67,7 @@ func (m *Monitor) Monitoring() {
 		}
 
 		if isLive && (!streamData.Checked || !streamData.Live) {
-			isPro, err := m.db.IsUserPro(sub.UserID)
+			isPro, _, err := m.db.IsUserPro(sub.UserID)
 			if err != nil {
 				log.Println(err)
 			}
