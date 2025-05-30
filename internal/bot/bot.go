@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
+
 	"twitchannouncer/internal/config"
 	"twitchannouncer/internal/database"
 	"twitchannouncer/internal/yookassa"
@@ -28,11 +30,127 @@ func StartBot(cfg config.Config, bot *tgbotapi.BotAPI, db *database.DB) {
 	updates := bot.GetUpdatesChan(u)
 
 	for update := range updates {
+		if update.CallbackQuery != nil {
+			handleCallbackQuery(bot, db, update.CallbackQuery)
+			continue
+		}
 		if update.Message == nil {
 			continue
 		}
 		handleUpdate(bot, db, update)
 	}
+}
+
+func handleCallbackQuery(bot *tgbotapi.BotAPI, db *database.DB, callback *tgbotapi.CallbackQuery) {
+	chatID := callback.Message.Chat.ID
+	messageID := callback.Message.MessageID
+	userID := callback.From.ID
+	data := callback.Data
+
+	switch {
+	case strings.HasPrefix(data, "list_page_"):
+		pageStr := strings.TrimPrefix(data, "list_page_")
+		page, _ := strconv.Atoi(pageStr)
+		subs, _ := db.GetUserSubscriptions(userID)
+
+		msgText, keyboard := buildSubscriptionPage(subs, page)
+		edit := tgbotapi.NewEditMessageText(chatID, messageID, msgText)
+		edit.ParseMode = "Markdown"
+		edit.ReplyMarkup = &keyboard
+		bot.Send(edit)
+
+	case strings.HasPrefix(data, "delete_sub_"):
+		idStr := strings.TrimPrefix(data, "delete_sub_")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			log.Printf("Неверный ID подписки: %v", err)
+			return
+		}
+
+		subscriptions, _ := db.GetUserSubscriptions(userID)
+		var sub *database.SubscriptionData
+		for _, s := range subscriptions {
+			if s.ID == id {
+				sub = &s
+				break
+			}
+		}
+		if sub == nil {
+			bot.Send(tgbotapi.NewMessage(chatID, "❗ Подписка не найдена."))
+			return
+		}
+
+		text := fmt.Sprintf("❗ Вы уверены, что хотите удалить подписку `%s → %s`?", sub.TwitchUsername, sub.ChannelName)
+		edit := tgbotapi.NewEditMessageTextAndMarkup(chatID, messageID, text,
+			tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("✅ Да, удалить", fmt.Sprintf("confirm_sub_%d", sub.ID)),
+					tgbotapi.NewInlineKeyboardButtonData("🔙 Отмена", "list_page_0"),
+				),
+			),
+		)
+		edit.ParseMode = "Markdown"
+		bot.Send(edit)
+
+	case strings.HasPrefix(data, "confirm_sub_"):
+		idStr := strings.TrimPrefix(data, "confirm_sub_")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			log.Printf("Неверный ID подписки: %v", err)
+			bot.Send(tgbotapi.NewCallback(callback.ID, "Ошибка при удалении подписки"))
+			return
+		}
+
+		err = db.DeleteSubscriptionByID(id)
+		if err != nil {
+			log.Printf("Ошибка удаления подписки: %v", err)
+			bot.Send(tgbotapi.NewCallback(callback.ID, "Ошибка при удалении подписки"))
+			return
+		}
+
+		text := "✅ Подписка успешно удалена."
+		edit := tgbotapi.NewEditMessageText(chatID, messageID, text)
+		edit.ParseMode = "Markdown"
+		bot.Send(edit)
+	}
+
+	bot.Request(tgbotapi.NewCallback(callback.ID, ""))
+}
+
+func buildSubscriptionPage(subs []database.SubscriptionData, page int) (string, tgbotapi.InlineKeyboardMarkup) {
+	const perPage = 5
+	start := page * perPage
+	end := start + perPage
+	if end > len(subs) {
+		end = len(subs)
+	}
+	paginated := subs[start:end]
+
+	var msg strings.Builder
+	msg.WriteString("Ваши активные подписки:\n")
+	rows := [][]tgbotapi.InlineKeyboardButton{}
+
+	for _, sub := range paginated {
+		text := fmt.Sprintf("%s → %s", sub.TwitchUsername, sub.ChannelName)
+		callbackData := fmt.Sprintf("delete_sub_%d", sub.ID) // только ID
+
+		button := tgbotapi.NewInlineKeyboardButtonData(text, callbackData)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(button))
+	}
+
+	navRow := []tgbotapi.InlineKeyboardButton{}
+	if page > 0 {
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("⬅ Назад", fmt.Sprintf("list_page_%d", page-1)))
+	}
+	if end < len(subs) {
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Вперёд ➡", fmt.Sprintf("list_page_%d", page+1)))
+	}
+	if len(navRow) > 0 {
+		rows = append(rows, navRow)
+	}
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	return msg.String(), keyboard
 }
 
 func handleUpdate(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
@@ -48,10 +166,6 @@ func handleUpdate(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update)
 		handleAwaitingUsername(bot, update)
 	case "awaiting_channel":
 		handleAwaitingChannel(bot, db, update)
-	case "awaiting_delete_username":
-		handleAwaitingDeleteUsername(bot, update)
-	case "awaiting_delete_channel":
-		handleAwaitingDeleteChannel(bot, db, update)
 	}
 }
 
@@ -64,8 +178,7 @@ func handleCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update
 		helpText := `📌 *Команды бота:*
 			/help — Показать справку
 			/new — ➕ Добавить Twitch-подписку
-			/list — 📋 Посмотреть ваши подписки
-			/delete — ❌ Удалить подписку по нику и ID`
+			/list — 📋 Посмотреть ваши подписки`
 		msg := tgbotapi.NewMessage(chatID, helpText)
 		msg.ParseMode = "Markdown"
 		bot.Send(msg)
@@ -75,7 +188,16 @@ func handleCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update
 		userData.TelegramID = update.Message.From.ID
 		userData.TelegramUsername = update.Message.From.UserName
 	case "list":
-		handleListCommand(bot, db, update)
+		subs, err := db.GetUserSubscriptions(update.Message.From.ID)
+		if err != nil || len(subs) == 0 {
+			bot.Send(tgbotapi.NewMessage(chatID, "У вас пока нет добавленных Twitch-юзернеймов."))
+			return
+		}
+		msgText, keyboard := buildSubscriptionPage(subs, 0)
+		msg := tgbotapi.NewMessage(chatID, msgText)
+		msg.ParseMode = "Markdown"
+		msg.ReplyMarkup = keyboard
+		bot.Send(msg)
 	case "delete":
 		bot.Send(tgbotapi.NewMessage(chatID, "Введите Twitch username, который вы хотите удалить:"))
 		userState[chatID] = "awaiting_delete_username"
@@ -84,29 +206,6 @@ func handleCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update
 	default:
 		bot.Send(tgbotapi.NewMessage(chatID, "Неизвестная команда"))
 	}
-}
-
-func handleListCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
-	chatID := update.Message.Chat.ID
-	subs, err := db.GetUserSubscriptions(update.Message.From.ID)
-	if err != nil {
-		bot.Send(tgbotapi.NewMessage(chatID, "Ошибка при получении списка ваших подписок."))
-		fmt.Println(err.Error())
-		return
-	}
-
-	if len(subs) == 0 {
-		bot.Send(tgbotapi.NewMessage(chatID, "У вас пока нет добавленных Twitch-юзернеймов."))
-		return
-	}
-
-	var msg strings.Builder
-	msg.WriteString("Ваши активные подписки:\n")
-	for _, sub := range subs {
-		msg.WriteString(fmt.Sprintf("- %s → %s\n", sub.TwitchUsername, sub.ChannelName))
-	}
-
-	bot.Send(tgbotapi.NewMessage(chatID, msg.String()))
 }
 
 func handleAwaitingUsername(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
@@ -126,54 +225,16 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 		subscriptionData.UserID = userData.TelegramID
 		err := db.StoreData(userData, subscriptionData)
 		if err != nil {
-			if strings.Contains(err.Error(), "уже существует") {
-				text := "Такая подписка уже существует!"
-				bot.Send(tgbotapi.NewMessage(chatID, text))
-			} else {
-				text := "Произошла ошибка при добавлении данных."
-				log.Println("%s\n%v", text, err)
-				bot.Send(tgbotapi.NewMessage(chatID, text))
-			}
+			text := "Произошла ошибка при добавлении данных."
+			log.Println(err)
+			bot.Send(tgbotapi.NewMessage(chatID, text))
 			return
 		}
 
 		text := fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName)
-		log.Printf("Новая подписка добавлена. %s", fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName))
-
 		bot.Send(tgbotapi.NewMessage(chatID, text))
 	} else {
 		bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, чтобы я мог получить его ID."))
-	}
-}
-
-func handleAwaitingDeleteUsername(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
-	chatID := update.Message.Chat.ID
-	deleteTemp[chatID] = database.SubscriptionData{
-		TwitchUsername: strings.ToLower(strings.TrimSpace(update.Message.Text)),
-	}
-	bot.Send(tgbotapi.NewMessage(chatID, "Теперь перешлите сообщение из канала, связанного с этим юзернеймом:"))
-	userState[chatID] = "awaiting_delete_channel"
-}
-
-func handleAwaitingDeleteChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
-	chatID := update.Message.Chat.ID
-	dataToDelete := deleteTemp[chatID]
-
-	if update.Message.ForwardFromChat != nil && update.Message.ForwardFromChat.Type == "channel" {
-		dataToDelete.ChannelID = update.Message.ForwardFromChat.ID
-		dataToDelete.ChannelName = update.Message.ForwardFromChat.UserName
-
-		err := db.DeleteData(dataToDelete)
-		if err != nil {
-			bot.Send(tgbotapi.NewMessage(chatID, err.Error()))
-		} else {
-			bot.Send(tgbotapi.NewMessage(chatID, "Подписка успешно удалена!"))
-		}
-
-		userState[chatID] = ""
-		delete(deleteTemp, chatID)
-	} else {
-		bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, из которого нужно удалить подписку."))
 	}
 }
 
@@ -203,20 +264,17 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 
 	amount := "50₽"
 
-	msgText := fmt.Sprintf("💳 Для активации подписки Pro нажмите кнопку ниже и оплатите %s.", amount)
+	msgText := fmt.Sprintf("💳 Для активации подписки Pro нажмите кнопку ниже и оплатите %s:", amount)
 
 	button := tgbotapi.NewInlineKeyboardButtonURL("Оплатить "+amount, payURL)
-	row := tgbotapi.NewInlineKeyboardRow(button)
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(row)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(button),
+	)
 
 	msg := tgbotapi.NewMessage(chatID, msgText)
 	msg.ReplyMarkup = keyboard
-	msg.ParseMode = "HTML"
 
-	_, err = bot.Send(msg)
-	if err != nil {
-		log.Printf("Ошибка при отправке сообщения с кнопкой: %v", err)
-	}
+	bot.Send(msg)
 }
 
 func StartProExpiryChecker(bot *tgbotapi.BotAPI, db *database.DB, interval time.Duration) {

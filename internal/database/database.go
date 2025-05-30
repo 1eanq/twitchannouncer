@@ -100,11 +100,13 @@ func (db *DB) StoreData(userData UserData, subscriptionData SubscriptionData) er
 
 func (db *DB) GetUserSubscriptions(id int64) ([]SubscriptionData, error) {
 	ctx := context.Background()
+	log.Printf("Получение списка подписок для %d", id)
 	rows, err := db.Pool.Query(ctx, `
-		SELECT twitch_username, channel_name FROM subscriptions
+		SELECT id, twitch_username, channel_name, channel_id FROM subscriptions
 		WHERE user_id = $1
 	`, id)
 	if err != nil {
+		log.Printf("Ошибка получения списка подписок: %v", err)
 		return nil, fmt.Errorf("ошибка выборки: %w", err)
 	}
 	defer rows.Close()
@@ -112,7 +114,8 @@ func (db *DB) GetUserSubscriptions(id int64) ([]SubscriptionData, error) {
 	var subs []SubscriptionData
 	for rows.Next() {
 		var d SubscriptionData
-		if err := rows.Scan(&d.TwitchUsername, &d.ChannelName); err != nil {
+		if err := rows.Scan(&d.ID, &d.TwitchUsername, &d.ChannelName, &d.ChannelID); err != nil {
+			log.Printf("Ошибка сканирования: %v", err)
 			return nil, err
 		}
 		subs = append(subs, d)
@@ -129,25 +132,19 @@ func (db *DB) IfExists(data SubscriptionData) (bool, error) {
 	`, data.UserID, data.TwitchUsername, data.ChannelID).Scan(&count)
 
 	if err != nil {
+		log.Printf("ошибка при проверке: %v", err)
 		return false, fmt.Errorf("ошибка при проверке: %w", err)
 	}
 	return count > 0, nil
 }
 
-func (db *DB) DeleteData(data SubscriptionData) error {
+func (db *DB) DeleteSubscriptionByID(id int) error {
 	ctx := context.Background()
-	exists, err := db.IfExists(data)
-	if err != nil {
-		return fmt.Errorf("ошибка при проверке существования")
-	}
-	if !exists {
-		return fmt.Errorf("такой подписки не существует")
-	}
 
-	_, err = db.Pool.Exec(ctx, `
+	_, err := db.Pool.Exec(ctx, `
 		DELETE FROM subscriptions
-		WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
-	`, data.UserID, data.TwitchUsername, data.ChannelID)
+		WHERE id = $1
+	`, id)
 
 	return err
 }

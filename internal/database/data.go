@@ -10,6 +10,7 @@ type UserData struct {
 }
 
 type SubscriptionData struct {
+	ID              int
 	UserID          int64
 	ChannelID       int64
 	TwitchUsername  string
