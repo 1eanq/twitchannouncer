@@ -127,16 +127,20 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 		err := db.StoreData(userData, subscriptionData)
 		if err != nil {
 			if strings.Contains(err.Error(), "уже существует") {
-				bot.Send(tgbotapi.NewMessage(chatID, "Такая подписка уже существует!"))
+				text := "Такая подписка уже существует!"
+				bot.Send(tgbotapi.NewMessage(chatID, text))
 			} else {
-				bot.Send(tgbotapi.NewMessage(chatID, "Произошла ошибка при добавлении данных."))
+				text := "Произошла ошибка при добавлении данных."
+				log.Println("%s\n%v", text, err)
+				bot.Send(tgbotapi.NewMessage(chatID, text))
 			}
 			return
 		}
+
+		text := fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName)
 		log.Printf("Новая подписка добавлена. %s", fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName))
 
-		bot.Send(tgbotapi.NewMessage(chatID,
-			fmt.Sprintf("Оповещения о стримах %s успешно добавлены в канал @%s", subscriptionData.TwitchUsername, subscriptionData.ChannelName)))
+		bot.Send(tgbotapi.NewMessage(chatID, text))
 	} else {
 		bot.Send(tgbotapi.NewMessage(chatID, "Пожалуйста, перешлите сообщение из канала, чтобы я мог получить его ID."))
 	}
@@ -197,8 +201,22 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 		return
 	}
 
-	msg := fmt.Sprintf("💳 Для активации подписки Pro перейдите по ссылке и оплатите:\n%s", payURL)
-	bot.Send(tgbotapi.NewMessage(chatID, msg))
+	amount := "50₽"
+
+	msgText := fmt.Sprintf("💳 Для активации подписки Pro нажмите кнопку ниже и оплатите %s.", amount)
+
+	button := tgbotapi.NewInlineKeyboardButtonURL("Оплатить "+amount, payURL)
+	row := tgbotapi.NewInlineKeyboardRow(button)
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(row)
+
+	msg := tgbotapi.NewMessage(chatID, msgText)
+	msg.ReplyMarkup = keyboard
+	msg.ParseMode = "HTML"
+
+	_, err = bot.Send(msg)
+	if err != nil {
+		log.Printf("Ошибка при отправке сообщения с кнопкой: %v", err)
+	}
 }
 
 func StartProExpiryChecker(bot *tgbotapi.BotAPI, db *database.DB, interval time.Duration) {
