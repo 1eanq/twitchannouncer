@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 )
 
 type YooKassaPaymentRequest struct {
@@ -64,6 +65,8 @@ func (c *Client) CreatePayment(telegramID int64) (string, error) {
 	if respData.Confirmation.URL == "" {
 		return "", fmt.Errorf("не удалось получить ссылку на оплату")
 	}
+
+	log.Printf("Создана платежная ссылка: %s", respData.Confirmation.URL)
 
 	return respData.Confirmation.URL, nil
 }
