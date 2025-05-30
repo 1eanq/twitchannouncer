@@ -72,8 +72,12 @@ func (db *DB) StoreData(userData UserData, subscriptionData SubscriptionData) er
 
 	var exists int
 	err = db.Pool.QueryRow(ctx, `
-		SELECT 1 FROM subscriptions WHERE user_id = $1 AND channel_id = $2 AND twitch_username = $3
-	`, subscriptionData.UserID, subscriptionData.ChannelID, subscriptionData.TwitchUsername).Scan(&exists)
+	SELECT 1 FROM subscriptions WHERE user_id = $1 AND channel_id = $2 AND twitch_username = $3
+`, subscriptionData.UserID, subscriptionData.ChannelID, subscriptionData.TwitchUsername).Scan(&exists)
+
+	if err != nil && err != pgx.ErrNoRows {
+		return fmt.Errorf("ошибка при проверке существующей подписки: %w", err)
+	}
 
 	if err == nil {
 		return fmt.Errorf("такая подписка уже существует")
@@ -85,7 +89,11 @@ func (db *DB) StoreData(userData UserData, subscriptionData SubscriptionData) er
 	`, subscriptionData.UserID, subscriptionData.ChannelID, subscriptionData.ChannelName, subscriptionData.TwitchUsername)
 
 	if err != nil {
-		return fmt.Errorf("ошибка вставки подписки: %w", err)
+		if err != nil {
+			log.Printf("Ошибка при вставке подписки: %v", err)
+			return fmt.Errorf("ошибка вставки подписки: %w", err)
+		}
+
 	}
 	return nil
 }
