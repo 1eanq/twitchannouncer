@@ -3,24 +3,23 @@ name: Deploy to VPS
 on:
   push:
     branches:
-      - main  # или ветка, по которой деплоишь
+      - main  # Измени, если у тебя другая ветка
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Deploy to VPS via SSH
-      uses: appleboy/ssh-action@v1.0.0
-      with:
-        host: ${{ secrets.SSH_HOST }}
-        username: ${{ secrets.SSH_USERNAME }}
-        key: ${{ secrets.SSH_KEY }}
-        script: |
-          cd /path/to/your/project
-          git pull
-          docker-compose down
-          docker-compose up -d --build
+      - name: SSH and restart service
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /root/twitchannouncer
+            git pull
+            make restart
