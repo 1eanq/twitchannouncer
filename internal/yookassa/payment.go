@@ -49,7 +49,7 @@ func (c *Client) CreatePayment(telegramID int64, email string) (string, error) {
 	reqBody.Amount.Value = "50.00"
 	reqBody.Amount.Currency = "RUB"
 	reqBody.Confirmation.Type = "redirect"
-	reqBody.Capture = false
+	reqBody.Capture = true
 	reqBody.Confirmation.ReturnURL = "https://t.me/Twitchmanannouncer_bot"
 	reqBody.Description = fmt.Sprintf("Pro подписка TwitchAnnouncer для пользователя %d", telegramID)
 	reqBody.Metadata = map[string]string{"telegram_id": fmt.Sprintf("%d", telegramID)}
