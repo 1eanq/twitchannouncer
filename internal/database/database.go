@@ -358,7 +358,7 @@ func (db *DB) SetEmail(data UserData) error {
 		INSERT INTO users (telegram_id, email)
 		VALUES ($1, $2)
 		ON CONFLICT (telegram_id) DO UPDATE
-		SET expires_at = EXCLUDED.expires_at;
+		SET email = EXCLUDED.email;
 	`, data.TelegramID, data.Email)
 
 	return err
