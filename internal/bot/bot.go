@@ -319,6 +319,18 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	bot.Send(msg)
 }
 
+func StartProExpiryChecker(bot *tgbotapi.BotAPI, db *database.DB, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		for range ticker.C {
+			err := db.RemoveExpiredProUsers(bot)
+			if err != nil {
+				log.Printf("❗ Ошибка при удалении просроченных подписок: %v", err)
+			}
+		}
+	}()
+}
+
 func isValidEmail(email string) bool {
 	// Простейшая проверка email регулярным выражением
 	re := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
