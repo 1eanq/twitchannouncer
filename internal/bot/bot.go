@@ -297,7 +297,7 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	}
 
 	client := yookassa.NewClient()
-	payURL, err := client.CreatePayment(userID)
+	payURL, err := client.CreatePayment(userID, email)
 	if err != nil {
 		log.Printf("YooKassa error (user %d): %v", userID, err)
 		bot.Send(tgbotapi.NewMessage(chatID, "❗ Ошибка при создании платежа. Попробуйте позже."))
