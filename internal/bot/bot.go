@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +17,6 @@ import (
 )
 
 var userState = make(map[int64]string)
-var deleteTemp = make(map[int64]database.SubscriptionData)
 var userData database.UserData
 var subscriptionData database.SubscriptionData
 
@@ -166,6 +166,8 @@ func handleUpdate(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update)
 		handleAwaitingUsername(bot, update)
 	case "awaiting_channel":
 		handleAwaitingChannel(bot, db, update)
+	case "awaiting_email":
+		handleAwaitingEmail(bot, db, update)
 	}
 }
 
@@ -238,6 +240,23 @@ func handleAwaitingChannel(bot *tgbotapi.BotAPI, db *database.DB, update tgbotap
 	}
 }
 
+func handleAwaitingEmail(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
+	chatID := update.Message.Chat.ID
+	email := strings.TrimSpace(update.Message.Text)
+
+	if !isValidEmail(email) {
+		bot.Send(tgbotapi.NewMessage(chatID, "❗ Пожалуйста, введите корректный email."))
+		return
+	}
+
+	userData.Email = email
+
+	db.SetEmail(userData)
+
+	userState[chatID] = ""
+
+}
+
 func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
 	userID := update.Message.From.ID
@@ -259,6 +278,20 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 		text := fmt.Sprintf("%s\n\n✅ У вас уже активна подписка *Pro* до *%s*.", description, expiry.Format("02.01.2006"))
 		msg := tgbotapi.NewMessage(chatID, text)
 		msg.ParseMode = "Markdown"
+		bot.Send(msg)
+		return
+	}
+
+	email, err := db.GetUserEmail(userID)
+	if err != nil {
+		msg := tgbotapi.NewMessage(chatID, "Пожалуйста, введите email")
+		bot.Send(msg)
+		userState[chatID] = "awaiting_email"
+		return
+	}
+
+	if email == "" {
+		msg := tgbotapi.NewMessage(chatID, "❗ Email не может быть пустым. Пожалуйста, добавьте email в профиле и попробуйте снова.")
 		bot.Send(msg)
 		return
 	}
@@ -286,14 +319,8 @@ func handleProCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Upd
 	bot.Send(msg)
 }
 
-func StartProExpiryChecker(bot *tgbotapi.BotAPI, db *database.DB, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		for range ticker.C {
-			err := db.RemoveExpiredProUsers(bot)
-			if err != nil {
-				log.Printf("❗ Ошибка при удалении просроченных подписок: %v", err)
-			}
-		}
-	}()
+func isValidEmail(email string) bool {
+	// Простейшая проверка email регулярным выражением
+	re := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	return re.MatchString(email)
 }

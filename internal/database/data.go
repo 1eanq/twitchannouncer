@@ -1,12 +1,15 @@
 package database
 
-import "time"
+import (
+	"time"
+)
 
 type UserData struct {
 	TelegramID       int64
 	TelegramUsername string
 	Admin            bool
-	expires_at       time.Time
+	Expires_at       time.Time
+	Email            string
 }
 
 type SubscriptionData struct {

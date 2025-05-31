@@ -331,3 +331,35 @@ func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
 
 	return nil
 }
+
+func (db *DB) GetUserEmail(telegramID int64) (string, error) {
+	var email *string
+
+	err := db.Pool.QueryRow(context.Background(),
+		`SELECT email FROM users WHERE telegram_id = $1`, telegramID).
+		Scan(&email)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("пользователь с telegram_id %d не найден", telegramID)
+		}
+		return "", fmt.Errorf("ошибка запроса email: %w", err)
+	}
+
+	if email == nil || *email == "" {
+		return "", fmt.Errorf("email для пользователя с telegram_id %d не установлен", telegramID)
+	}
+
+	return *email, nil
+}
+
+func (db *DB) SetEmail(data UserData) error {
+	_, err := db.Pool.Exec(context.Background(), `
+		INSERT INTO users (telegram_id, email)
+		VALUES ($1, $2)
+		ON CONFLICT (telegram_id) DO UPDATE
+		SET expires_at = EXCLUDED.expires_at;
+	`, data.TelegramID, data.Email)
+
+	return err
+}
