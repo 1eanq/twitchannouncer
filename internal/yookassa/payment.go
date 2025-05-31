@@ -12,6 +12,7 @@ type YooKassaPaymentRequest struct {
 		Value    string `json:"value"`
 		Currency string `json:"currency"`
 	} `json:"amount"`
+	Capture      bool `json:"capture"`
 	Confirmation struct {
 		Type      string `json:"type"`
 		ReturnURL string `json:"return_url"`
@@ -29,7 +30,7 @@ type YooKassaPaymentRequest struct {
 				Value    string `json:"value"`
 				Currency string `json:"currency"`
 			} `json:"amount"`
-			VatCode int `json:"vat_code"` // 1 — Без НДС
+			VatCode int `json:"vat_code"`
 		} `json:"items"`
 	} `json:"receipt"`
 }
@@ -48,6 +49,7 @@ func (c *Client) CreatePayment(telegramID int64, email string) (string, error) {
 	reqBody.Amount.Value = "50.00"
 	reqBody.Amount.Currency = "RUB"
 	reqBody.Confirmation.Type = "redirect"
+	reqBody.Capture = false
 	reqBody.Confirmation.ReturnURL = "https://t.me/Twitchmanannouncer_bot"
 	reqBody.Description = fmt.Sprintf("Pro подписка TwitchAnnouncer для пользователя %d", telegramID)
 	reqBody.Metadata = map[string]string{"telegram_id": fmt.Sprintf("%d", telegramID)}
