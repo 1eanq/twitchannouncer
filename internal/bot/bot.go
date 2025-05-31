@@ -248,10 +248,10 @@ func handleAwaitingEmail(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.
 		bot.Send(tgbotapi.NewMessage(chatID, "❗ Пожалуйста, введите корректный email."))
 		return
 	}
-
+	userData.TelegramID = update.Message.From.ID
 	userData.Email = email
 
-	db.SetEmail(userData)
+	db.UpdateUserEmail(userData)
 
 	userState[chatID] = ""
 

@@ -353,13 +353,17 @@ func (db *DB) GetUserEmail(telegramID int64) (string, error) {
 	return *email, nil
 }
 
-func (db *DB) SetEmail(data UserData) error {
-	_, err := db.Pool.Exec(context.Background(), `
-		INSERT INTO users (telegram_id, email)
-		VALUES ($1, $2)
-		ON CONFLICT (telegram_id) DO UPDATE
-		SET email = EXCLUDED.email;
-	`, data.TelegramID, data.Email)
+func (db *DB) UpdateUserEmail(data UserData) error {
+	cmdTag, err := db.Pool.Exec(context.Background(),
+		`UPDATE users SET email = $1 WHERE telegram_id = $2`,
+		data.Email, data.TelegramID)
+	if err != nil {
+		return fmt.Errorf("ошибка при обновлении email: %w", err)
+	}
 
-	return err
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("пользователь с telegram_id %d не найден", data.TelegramID)
+	}
+
+	return nil
 }
