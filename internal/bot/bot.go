@@ -163,7 +163,7 @@ func handleUpdate(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update)
 
 	switch userState[chatID] {
 	case "awaiting_username":
-		handleAwaitingUsername(bot, update)
+		handleAwaitingUsername(bot, db, update)
 	case "awaiting_channel":
 		handleAwaitingChannel(bot, db, update)
 	case "awaiting_email":
@@ -210,8 +210,13 @@ func handleCommand(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update
 	}
 }
 
-func handleAwaitingUsername(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
+func handleAwaitingUsername(bot *tgbotapi.BotAPI, db *database.DB, update tgbotapi.Update) {
 	chatID := update.Message.Chat.ID
+	userID := update.Message.From.ID
+	username := update.Message.From.UserName
+	userData.TelegramUsername = username
+	userData.TelegramID = userID
+	db.StoreData(userData, subscriptionData)
 	subscriptionData.TwitchUsername = strings.ToLower(strings.TrimSpace(update.Message.Text))
 	bot.Send(tgbotapi.NewMessage(chatID, "Перешлите сообщение из канала\nКанал должен быть открытым!"))
 	userState[chatID] = "awaiting_channel"
