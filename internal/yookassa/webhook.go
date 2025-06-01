@@ -56,7 +56,7 @@ func HandleWebhook(db *database.DB, bot *tgbotapi.BotAPI) http.HandlerFunc {
 		}
 
 		switch notif.Event {
-		case "payment.succeeded", "payment.waiting_for_capture":
+		case "payment.succeeded":
 			err := db.MakeUserPro(tgID)
 			if err != nil {
 				log.Printf("Ошибка при установке Pro-подписки для %d: %v", tgID, err)
