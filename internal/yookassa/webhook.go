@@ -1,6 +1,9 @@
 package yookassa
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
@@ -23,54 +26,71 @@ type WebhookNotification struct {
 	} `json:"object"`
 }
 
-func HandleWebhook(db *database.DB, bot *tgbotapi.BotAPI) http.HandlerFunc {
+func HandleWebhook(db *database.DB, bot *tgbotapi.BotAPI, secret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "can't read body", http.StatusBadRequest)
-			log.Printf("Ошибка чтения тела запроса: %v", err)
 			return
 		}
 
-		log.Printf("Получен webhook: %s", body)
+		// Проверка подписи (пример)
+		signature := r.Header.Get("Content-HMAC")
+		if !verifySignature(body, signature, secret) {
+			http.Error(w, "invalid signature", http.StatusForbidden)
+			return
+		}
 
 		var notif WebhookNotification
 		if err := json.Unmarshal(body, &notif); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
-			log.Printf("Ошибка декодирования JSON: %v", err)
 			return
 		}
 
-		tgIDStr := notif.Object.Metadata.TelegramID
-		if tgIDStr == "" {
-			log.Println("Отсутствует telegram_id в metadata")
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		tgID, err := strconv.ParseInt(tgIDStr, 10, 64)
+		tgID, err := strconv.ParseInt(notif.Object.Metadata.TelegramID, 10, 64)
 		if err != nil {
-			log.Printf("Неверный telegram_id: %v", err)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
 		switch notif.Event {
 		case "payment.succeeded":
-			err := db.MakeUserPro(tgID)
+			isPro, _, err := db.IsUserPro(tgID)
 			if err != nil {
-				log.Printf("Ошибка при установке Pro-подписки для %d: %v", tgID, err)
-			} else {
-				msg := tgbotapi.NewMessage(tgID, "✅ Ваша подписка Pro активирована! Спасибо за поддержку!")
-				if _, err := bot.Send(msg); err != nil {
-					log.Printf("Не удалось отправить сообщение пользователю %d: %v", tgID, err)
+				log.Println("Ошибка проверки Pro статуса:", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			if !isPro {
+				if err := db.MakeUserPro(tgID); err != nil {
+					log.Println("Ошибка активации Pro:", err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
 				}
-				log.Printf("Pro активирована для пользователя %d", tgID)
+				msg := tgbotapi.NewMessage(tgID, "✅ Ваша подписка Pro активирована! Спасибо!")
+				bot.Send(msg)
 			}
 		default:
 			log.Printf("Необработанное событие: %s", notif.Event)
 		}
 
-		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
 	}
+}
+
+func verifySignature(body []byte, signatureHeader string, secret string) bool {
+	if signatureHeader == "" {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expectedMAC := mac.Sum(nil)
+
+	decodedSig, err := base64.StdEncoding.DecodeString(signatureHeader)
+	if err != nil {
+		return false
+	}
+
+	return hmac.Equal(decodedSig, expectedMAC)
 }

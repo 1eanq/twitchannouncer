@@ -8,7 +8,7 @@ type UserData struct {
 	TelegramID       int64
 	TelegramUsername string
 	Admin            bool
-	Expires_at       time.Time
+	ExpiresAt        time.Time
 	Email            string
 }
 

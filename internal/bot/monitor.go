@@ -63,7 +63,7 @@ func (m *Monitor) Monitoring() {
 		streamData, err := m.db.GetStreamData(sub.TwitchUsername)
 		if err != nil {
 			log.Printf("Ошибка при получении твич-юзеров: %v", err)
-			return
+			continue
 		}
 
 		if isLive && (!streamData.Checked || !streamData.Live) {

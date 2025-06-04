@@ -3,7 +3,6 @@ package yookassa
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -16,12 +15,6 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	shopID := os.Getenv("YOOKASSA_SHOP_ID")
-	secretKey := os.Getenv("YOOKASSA_SECRET_KEY")
-
-	fmt.Println("Shop ID:", shopID)
-	fmt.Println("Secret Key:", secretKey)
-
 	return &Client{
 		ShopID:    os.Getenv("YOOKASSA_SHOP_ID"),
 		SecretKey: os.Getenv("YOOKASSA_SECRET_KEY"),

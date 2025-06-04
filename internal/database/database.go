@@ -1,18 +1,38 @@
+// Полная реализация DBInterface с логированием и структурой
 package database
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/jackc/pgx/v5"
 	"log"
 	"time"
 
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const proDuration = 30 * 24 * time.Hour
+
+type DBInterface interface {
+	StoreData(userData UserData, subscriptionData SubscriptionData) error
+	GetUserSubscriptions(id int64) ([]SubscriptionData, error)
+	IfExists(data SubscriptionData) (bool, error)
+	DeleteSubscriptionByID(id int) error
+	GetAllSubscriptions() ([]SubscriptionData, error)
+	GetAllTwitchUsernames() ([]string, error)
+	GetAllChannelsForUser(username string) ([]int64, error)
+	IsAdmin(id int) (bool, error)
+	GetStreamData(username string) (*SubscriptionData, error)
+	UpdateStreamStatus(username string, live, checked bool, latestMessageID int) error
+	MakeUserPro(userID int64) error
+	RemoveUserPro(userID int64) error
+	IsUserPro(userID int64) (bool, time.Time, error)
+	RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error
+	GetUserEmail(telegramID int64) (string, error)
+	UpdateUserEmail(data UserData) error
+}
 
 type DB struct {
 	Pool *pgxpool.Pool
@@ -22,91 +42,85 @@ func InitDatabase(connStr string) (*DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	log.Println("Инициализация подключения к PostgreSQL")
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка подключения к PostgreSQL: %w", err)
 	}
 
-	_, err = pool.Exec(ctx, `
-	CREATE TABLE IF NOT EXISTS users (
-		telegram_id BIGINT PRIMARY KEY,
-		telegram_username TEXT,
-		pro BOOLEAN DEFAULT FALSE,
-		admin BOOLEAN DEFAULT FALSE
-	)`)
-
-	if err != nil {
-		return nil, fmt.Errorf("ошибка при создании таблицы users: %w", err)
+	tx := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			telegram_id BIGINT PRIMARY KEY,
+			telegram_username TEXT,
+			pro BOOLEAN DEFAULT FALSE,
+			expires_at TIMESTAMP,
+			admin BOOLEAN DEFAULT FALSE,
+			email TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS subscriptions (
+			id SERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+			channel_id BIGINT NOT NULL,
+			channel_name TEXT,
+			twitch_username TEXT NOT NULL,
+			latest_message BIGINT NOT NULL DEFAULT 0,
+			live BOOLEAN DEFAULT FALSE,
+			checked BOOLEAN DEFAULT FALSE,
+			UNIQUE(user_id, channel_id, twitch_username)
+		)`,
 	}
 
-	_, err = pool.Exec(ctx, `
-	CREATE TABLE IF NOT EXISTS subscriptions (
-		id SERIAL PRIMARY KEY,
-		user_id BIGINT NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
-		channel_id BIGINT NOT NULL,
-		twitch_username TEXT NOT NULL,
-		latest_message BIGINT NOT NULL DEFAULT 0,
-		UNIQUE(user_id, channel_id, twitch_username)
-	)`)
-
-	if err != nil {
-		return nil, fmt.Errorf("ошибка при создании таблицы subscriptions: %w", err)
+	for _, query := range tx {
+		_, err = pool.Exec(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка при выполнении SQL: %w", err)
+		}
 	}
 
-	log.Println("Подключение к PostgreSQL установлено и таблицы созданы")
+	log.Println("Подключение к PostgreSQL успешно, таблицы готовы")
 	return &DB{Pool: pool}, nil
 }
 
 func (db *DB) StoreData(userData UserData, subscriptionData SubscriptionData) error {
 	ctx := context.Background()
+	log.Printf("Сохранение данных пользователя: %v, подписки: %v", userData, subscriptionData)
 
 	_, err := db.Pool.Exec(ctx, `
 		INSERT INTO users (telegram_id, telegram_username)
-		VALUES ($1, $2)
-		ON CONFLICT (telegram_id) DO UPDATE SET telegram_username = EXCLUDED.telegram_username
+			VALUES ($1, $2)
+			ON CONFLICT (telegram_id) DO UPDATE SET telegram_username = EXCLUDED.telegram_username
 	`, userData.TelegramID, userData.TelegramUsername)
-
 	if err != nil {
 		return fmt.Errorf("ошибка вставки/обновления пользователя: %w", err)
 	}
 
-	var exists int
-	err = db.Pool.QueryRow(ctx, `
-	SELECT 1 FROM subscriptions WHERE user_id = $1 AND channel_id = $2 AND twitch_username = $3
-`, subscriptionData.UserID, subscriptionData.ChannelID, subscriptionData.TwitchUsername).Scan(&exists)
-
-	if err != nil && err != pgx.ErrNoRows {
-		return fmt.Errorf("ошибка при проверке существующей подписки: %w", err)
+	exists, err := db.IfExists(subscriptionData)
+	if err != nil {
+		return err
 	}
-
-	if err == nil {
+	if exists {
 		return fmt.Errorf("такая подписка уже существует")
 	}
 
 	_, err = db.Pool.Exec(ctx, `
 		INSERT INTO subscriptions (user_id, channel_id, channel_name, twitch_username)
-		VALUES ($1, $2, $3, $4)
+			VALUES ($1, $2, $3, $4)
 	`, subscriptionData.UserID, subscriptionData.ChannelID, subscriptionData.ChannelName, subscriptionData.TwitchUsername)
-
 	if err != nil {
-		if err != nil {
-			log.Printf("Ошибка при вставке подписки: %v", err)
-			return fmt.Errorf("ошибка вставки подписки: %w", err)
-		}
-
+		return fmt.Errorf("ошибка вставки подписки: %w", err)
 	}
 	return nil
 }
 
 func (db *DB) GetUserSubscriptions(id int64) ([]SubscriptionData, error) {
 	ctx := context.Background()
-	log.Printf("Получение списка подписок для %d", id)
+	log.Printf("Получение подписок пользователя %d", id)
+
 	rows, err := db.Pool.Query(ctx, `
 		SELECT id, twitch_username, channel_name, channel_id FROM subscriptions
-		WHERE user_id = $1
+			WHERE user_id = $1
 	`, id)
 	if err != nil {
-		log.Printf("Ошибка получения списка подписок: %v", err)
 		return nil, fmt.Errorf("ошибка выборки: %w", err)
 	}
 	defer rows.Close()
@@ -115,7 +129,6 @@ func (db *DB) GetUserSubscriptions(id int64) ([]SubscriptionData, error) {
 	for rows.Next() {
 		var d SubscriptionData
 		if err := rows.Scan(&d.ID, &d.TwitchUsername, &d.ChannelName, &d.ChannelID); err != nil {
-			log.Printf("Ошибка сканирования: %v", err)
 			return nil, err
 		}
 		subs = append(subs, d)
@@ -128,11 +141,9 @@ func (db *DB) IfExists(data SubscriptionData) (bool, error) {
 	var count int
 	err := db.Pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM subscriptions
-		WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
+			WHERE user_id = $1 AND twitch_username = $2 AND channel_id = $3
 	`, data.UserID, data.TwitchUsername, data.ChannelID).Scan(&count)
-
 	if err != nil {
-		log.Printf("ошибка при проверке: %v", err)
 		return false, fmt.Errorf("ошибка при проверке: %w", err)
 	}
 	return count > 0, nil
@@ -140,12 +151,7 @@ func (db *DB) IfExists(data SubscriptionData) (bool, error) {
 
 func (db *DB) DeleteSubscriptionByID(id int) error {
 	ctx := context.Background()
-
-	_, err := db.Pool.Exec(ctx, `
-		DELETE FROM subscriptions
-		WHERE id = $1
-	`, id)
-
+	_, err := db.Pool.Exec(ctx, `DELETE FROM subscriptions WHERE id = $1`, id)
 	return err
 }
 
@@ -208,30 +214,22 @@ func (db *DB) GetAllChannelsForUser(username string) ([]int64, error) {
 
 func (db *DB) IsAdmin(id int) (bool, error) {
 	ctx := context.Background()
-	rows, err := db.Pool.Query(ctx, `SELECT admin FROM users WHERE telegram_id = $1`, id)
+	var admin bool
+	err := db.Pool.QueryRow(ctx, `SELECT admin FROM users WHERE telegram_id = $1`, id).Scan(&admin)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
 		return false, err
 	}
-	defer rows.Close()
-
-	if rows.Next() {
-		var admin bool
-		if err := rows.Scan(&admin); err != nil {
-			return false, err
-		}
-		return admin, nil
-	}
-
-	return false, fmt.Errorf("user not found")
+	return admin, nil
 }
 
 func (db *DB) GetStreamData(username string) (*SubscriptionData, error) {
 	ctx := context.Background()
 	row := db.Pool.QueryRow(ctx, `
 		SELECT user_id, twitch_username, live, checked, latest_message
-		FROM subscriptions
-		WHERE twitch_username = $1
-		LIMIT 1
+			FROM subscriptions WHERE twitch_username = $1 LIMIT 1
 	`, username)
 
 	var data SubscriptionData
@@ -239,40 +237,32 @@ func (db *DB) GetStreamData(username string) (*SubscriptionData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("не удалось получить данные о стриме: %w", err)
 	}
-
 	return &data, nil
 }
 
-func (db *DB) UpdateStreamStatus(username string, live bool, checked bool, latestMessageID int) error {
+func (db *DB) UpdateStreamStatus(username string, live, checked bool, latestMessageID int) error {
 	ctx := context.Background()
 	_, err := db.Pool.Exec(ctx, `
-		UPDATE subscriptions
-		SET live = $1, checked = $2, latest_message = $3
-		WHERE twitch_username = $4
+		UPDATE subscriptions SET live = $1, checked = $2, latest_message = $3
+			WHERE twitch_username = $4
 	`, live, checked, latestMessageID, username)
 	return err
 }
 
 func (db *DB) MakeUserPro(userID int64) error {
 	expiry := time.Now().Add(proDuration)
-
 	_, err := db.Pool.Exec(context.Background(), `
 		INSERT INTO users (telegram_id, expires_at)
-		VALUES ($1, $2)
-		ON CONFLICT (telegram_id) DO UPDATE
-		SET expires_at = EXCLUDED.expires_at;
+			VALUES ($1, $2)
+			ON CONFLICT (telegram_id) DO UPDATE SET expires_at = EXCLUDED.expires_at;
 	`, userID, expiry)
-
 	return err
 }
 
 func (db *DB) RemoveUserPro(userID int64) error {
 	_, err := db.Pool.Exec(context.Background(), `
-		UPDATE users
-		SET expires_at = NULL
-		WHERE telegram_id = $1;
+		UPDATE users SET expires_at = NULL WHERE telegram_id = $1;
 	`, userID)
-
 	return err
 }
 
@@ -280,32 +270,26 @@ func (db *DB) IsUserPro(userID int64) (bool, time.Time, error) {
 	ctx := context.Background()
 	var expiry time.Time
 	err := db.Pool.QueryRow(ctx, `
-		SELECT expires_at FROM users
-		WHERE telegram_id = $1 AND users.expires_at > NOW()
+		SELECT expires_at FROM users WHERE telegram_id = $1 AND expires_at > NOW()
 	`, userID).Scan(&expiry)
-
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, time.Time{}, nil
 		}
 		return false, time.Time{}, err
 	}
-
 	return true, expiry, nil
 }
 
 func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
-	rows, err := db.Pool.Query(context.Background(), `
-		SELECT telegram_id FROM users
-		WHERE expires_at IS NOT NULL AND expires_at <= NOW();
-	`)
+	ctx := context.Background()
+	rows, err := db.Pool.Query(ctx, `SELECT telegram_id FROM users WHERE expires_at IS NOT NULL AND expires_at <= NOW();`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
 	var expiredUserIDs []int64
-
 	for rows.Next() {
 		var userID int64
 		if err := rows.Scan(&userID); err == nil {
@@ -313,11 +297,7 @@ func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
 		}
 	}
 
-	_, err = db.Pool.Exec(context.Background(), `
-		UPDATE users
-		SET expires_at = NULL
-		WHERE expires_at IS NOT NULL AND expires_at <= NOW();
-	`)
+	_, err = db.Pool.Exec(ctx, `UPDATE users SET expires_at = NULL WHERE expires_at IS NOT NULL AND expires_at <= NOW();`)
 	if err != nil {
 		return err
 	}
@@ -328,42 +308,31 @@ func (db *DB) RemoveExpiredProUsers(bot *tgbotapi.BotAPI) error {
 			log.Printf("Не удалось отправить сообщение %d: %v", userID, err)
 		}
 	}
-
 	return nil
 }
 
 func (db *DB) GetUserEmail(telegramID int64) (string, error) {
 	var email *string
-
-	err := db.Pool.QueryRow(context.Background(),
-		`SELECT email FROM users WHERE telegram_id = $1`, telegramID).
-		Scan(&email)
-
+	err := db.Pool.QueryRow(context.Background(), `SELECT email FROM users WHERE telegram_id = $1`, telegramID).Scan(&email)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", fmt.Errorf("пользователь с telegram_id %d не найден", telegramID)
+			return "", fmt.Errorf("пользователь не найден")
 		}
 		return "", fmt.Errorf("ошибка запроса email: %w", err)
 	}
-
 	if email == nil || *email == "" {
-		return "", fmt.Errorf("email для пользователя с telegram_id %d не установлен", telegramID)
+		return "", fmt.Errorf("email не установлен")
 	}
-
 	return *email, nil
 }
 
 func (db *DB) UpdateUserEmail(data UserData) error {
-	cmdTag, err := db.Pool.Exec(context.Background(),
-		`UPDATE users SET email = $1 WHERE telegram_id = $2`,
-		data.Email, data.TelegramID)
+	cmdTag, err := db.Pool.Exec(context.Background(), `UPDATE users SET email = $1 WHERE telegram_id = $2`, data.Email, data.TelegramID)
 	if err != nil {
 		return fmt.Errorf("ошибка при обновлении email: %w", err)
 	}
-
 	if cmdTag.RowsAffected() == 0 {
-		return fmt.Errorf("пользователь с telegram_id %d не найден", data.TelegramID)
+		return fmt.Errorf("пользователь не найден")
 	}
-
 	return nil
 }
